@@ -382,7 +382,7 @@ include(Linux.cmake)
 ###################################################################################
 # create dll library
 ###################################################################################
-add_library( ${GMM_LIB_DLL_NAME} SHARED igdgmm.rc ${UMD_SOURCES} ${UMD_HEADERS})
+add_library( ${GMM_LIB_DLL_NAME} STATIC igdgmm.rc ${UMD_SOURCES} ${UMD_HEADERS})
 
 if(MSVC)
 
