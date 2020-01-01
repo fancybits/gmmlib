@@ -128,7 +128,7 @@ namespace GmmLib
         {
 #if defined(_WIN32)
             return(InterlockedIncrement((LONG *)&RefCount) - 1);  //InterLockedIncrement() returns incremented value
-#elif defined(__linux__)
+#elif defined(__GNUC__)
             return(__sync_fetch_and_add(&RefCount, 1));
 #endif
         }
@@ -150,7 +150,7 @@ namespace GmmLib
                 }
 #if defined(_WIN32)
             } while (!(InterlockedCompareExchange((LONG *)&RefCount, TargetValue, CurrentValue) == CurrentValue));
-#elif defined(__linux__)
+#elif defined(__GNUC__)
             } while (!__sync_bool_compare_and_swap(&RefCount, CurrentValue, TargetValue));
 #endif
 

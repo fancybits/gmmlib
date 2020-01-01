@@ -756,7 +756,7 @@ int32_t GMM_STDCALL GmmLib::GmmMultiAdapterContext::IncrementRefCount(ADAPTER_BD
     {
         int32_t *Ref = &pNode->RefCount;
 
-#if defined(__linux__)
+#if defined(__GNUC__)
         // returns 0 only when registering the first client
         return (__sync_fetch_and_add(Ref, 1));
 #endif
@@ -802,7 +802,7 @@ int32_t GMM_STDCALL GmmLib::GmmMultiAdapterContext::DecrementRefCount(ADAPTER_BD
             }
 #if defined(_WIN32)
         } while(!(InterlockedCompareExchange((LONG *)Ref, TargetValue, CurrentValue) == CurrentValue));
-#elif defined(__linux__) 
+#elif defined(__GNUC__)
         } while(!__sync_bool_compare_and_swap(Ref, CurrentValue, TargetValue));
 #endif
 
