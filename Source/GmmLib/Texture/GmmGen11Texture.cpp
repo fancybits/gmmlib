@@ -165,8 +165,6 @@ void GmmLib::GmmGen11TextureCalc::FillPlanarOffsetAddress(GMM_TEXTURE_INFO *pTex
                                           // VVVV
                                           // VVVV
                                           // VVVV
-        case GMM_FORMAT_BGRP:
-        case GMM_FORMAT_RGBP:
         case GMM_FORMAT_MFX_JPEG_YUV444: // Similar to IMC3 but U/V are full size.
                                          // YYYYYYYY
                                          // YYYYYYYY
@@ -191,6 +189,32 @@ void GmmLib::GmmGen11TextureCalc::FillPlanarOffsetAddress(GMM_TEXTURE_INFO *pTex
 
                 break;
             }
+        case GMM_FORMAT_BGRP:
+        case GMM_FORMAT_RGBP:
+        {
+            //For RGBP linear Tile keep resource Offset non aligned and for other Tile format to be 16-bit aligned
+            if(pTexInfo->Flags.Info.Linear)
+            {
+                *pUOffsetX = 0;
+                YHeight    = pTexInfo->BaseHeight;
+                *pUOffsetY = pTexInfo->BaseHeight;
+
+                *pVOffsetX = 0;
+                VHeight    = pTexInfo->BaseHeight;
+                *pVOffsetY = (GMM_GFX_SIZE_T)pTexInfo->BaseHeight * 2;
+            }
+            else //Tiled
+            {
+                *pUOffsetX = 0;
+                YHeight    = GFX_ALIGN(pTexInfo->BaseHeight, GMM_IMCx_PLANE_ROW_ALIGNMENT);
+                *pUOffsetY = GFX_ALIGN(pTexInfo->BaseHeight, GMM_IMCx_PLANE_ROW_ALIGNMENT);
+
+                *pVOffsetX = 0;
+                VHeight    = GFX_ALIGN(pTexInfo->BaseHeight, GMM_IMCx_PLANE_ROW_ALIGNMENT);
+                *pVOffsetY = (GMM_GFX_SIZE_T)GFX_ALIGN(pTexInfo->BaseHeight, GMM_IMCx_PLANE_ROW_ALIGNMENT) * 2;
+            }
+            break;
+        }
         case GMM_FORMAT_IMC2:
             SWAP_UV(); // IMC2 = IMC4 with Swapped U/V
         case GMM_FORMAT_IMC4:
@@ -272,6 +296,7 @@ void GmmLib::GmmGen11TextureCalc::FillPlanarOffsetAddress(GMM_TEXTURE_INFO *pTex
         case GMM_FORMAT_P012:
         case GMM_FORMAT_P016:
         case GMM_FORMAT_P208:
+        case GMM_FORMAT_P216:
         {
             // YYYYYYYY
             // YYYYYYYY
@@ -321,9 +346,15 @@ void GmmLib::GmmGen11TextureCalc::FillPlanarOffsetAddress(GMM_TEXTURE_INFO *pTex
         GMM_GFX_SIZE_T TileHeight = pPlatform->TileInfo[pTexInfo->TileMode].LogicalTileHeight;
         GMM_GFX_SIZE_T TileWidth  = pPlatform->TileInfo[pTexInfo->TileMode].LogicalTileWidth;
 
-        //U/V must be aligned to AuxT granularity, for 16K AuxT- 4x pitchalign enforces it,
-        //add extra padding for 64K AuxT
-        TileHeight *= 1;
+        if(GFX_GET_CURRENT_RENDERCORE(pPlatform->Platform) > IGFX_GEN11LP_CORE)
+        {
+            if(pTexInfo->Flags.Gpu.CCS)
+            {
+                //U/V must be aligned to AuxT granularity, for 16K AuxT- 4x pitchalign enforces it,
+                //add extra padding for 64K AuxT
+                TileHeight *= (!GMM_IS_64KB_TILE(pTexInfo->Flags) && !WA16K) ? 4 : 1;
+            }
+        }
 
         *pUOffsetX = GFX_ALIGN(*pUOffsetX, TileWidth);
         *pUOffsetY = GFX_ALIGN(*pUOffsetY, TileHeight);
@@ -759,8 +790,6 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmGen11TextureCalc::FillTexPlanar(GMM_TEXTURE_IN
                                           // VVVV
                                           // VVVV
                                           // VVVV
-        case GMM_FORMAT_BGRP:
-        case GMM_FORMAT_RGBP:
         case GMM_FORMAT_MFX_JPEG_YUV444: // Similar to IMC3 but U/V are full size.
 #if _WIN32
         case GMM_FORMAT_WGBOX_YUV444:
@@ -786,6 +815,27 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmGen11TextureCalc::FillTexPlanar(GMM_TEXTURE_IN
                 pTexInfo->OffsetInfo.Plane.NoOfPlanes = 3;
                 break;
             }
+        case GMM_FORMAT_BGRP:
+        case GMM_FORMAT_RGBP:
+        {
+            //For RGBP linear Tile keep resource Offset non aligned and for other Tile format to be 16-bit aligned
+            if(pTexInfo->Flags.Info.Linear)
+            {
+                VHeight = YHeight;
+
+                Height                                = YHeight + 2 * VHeight;
+                pTexInfo->OffsetInfo.Plane.NoOfPlanes = 3;
+            }
+            else //Tiled
+            {
+                YHeight = GFX_ALIGN(YHeight, GMM_IMCx_PLANE_ROW_ALIGNMENT);
+                VHeight = YHeight;
+
+                Height                                = YHeight + 2 * VHeight;
+                pTexInfo->OffsetInfo.Plane.NoOfPlanes = 3;
+            }
+            break;
+        }
         case GMM_FORMAT_IMC2: // IMC2 = IMC4 with Swapped U/V
         case GMM_FORMAT_IMC4:
         {
@@ -823,6 +873,7 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmGen11TextureCalc::FillTexPlanar(GMM_TEXTURE_IN
         case GMM_FORMAT_P012:
         case GMM_FORMAT_P016:
         case GMM_FORMAT_P208:
+        case GMM_FORMAT_P216:
         {
             // YYYYYYYY
             // YYYYYYYY
@@ -850,7 +901,8 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmGen11TextureCalc::FillTexPlanar(GMM_TEXTURE_IN
                (pTexInfo->Format == GMM_FORMAT_P010) ||
                (pTexInfo->Format == GMM_FORMAT_P012) ||
                (pTexInfo->Format == GMM_FORMAT_P016) ||
-               (pTexInfo->Format == GMM_FORMAT_P208))
+               (pTexInfo->Format == GMM_FORMAT_P208) ||
+               (pTexInfo->Format == GMM_FORMAT_P216))
             {
                 WidthBytesPhysical = GFX_ALIGN(WidthBytesPhysical, 2); // If odd YWidth, pitch bumps-up to fit rounded-up U/V planes.
                 pTexInfo->OffsetInfo.Plane.NoOfPlanes = 2;

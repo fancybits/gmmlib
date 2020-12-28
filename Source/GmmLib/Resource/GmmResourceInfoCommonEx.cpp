@@ -59,7 +59,7 @@ bool GmmLib::GmmResourceInfoCommon::CopyClientParams(GMM_RESCREATE_PARAMS &Creat
                 CreateParams.Flags.Info.TiledY = true;
 
                 // Pre-Gen11 Planar
-                if(GmmIsPlanar(CreateParams.Format))
+                if(GmmIsPlanar(CreateParams.Format) && (GFX_GET_CURRENT_RENDERCORE(pGmmGlobalContext->GetPlatformInfo().Platform) < IGFX_GEN11_CORE))
                 {
                     CreateParams.Flags.Info.TiledX = true;
                 }
@@ -147,6 +147,7 @@ bool GmmLib::GmmResourceInfoCommon::CopyClientParams(GMM_RESCREATE_PARAMS &Creat
         {
             //GMM_ASSERTDPF(Surf.Flags.Gpu.HiZ, "Lossless Z compression supported when Depth+HiZ+CCS is unified");
             AuxSecSurf                           = Surf;
+            AuxSecSurf.Type                      = AuxSecSurf.Type;
             Surf.Flags.Gpu.HiZ                   = 0; //Its depth buffer, so clear HiZ
             AuxSecSurf.Flags.Gpu.HiZ             = 0;
             AuxSurf.Flags.Gpu.IndirectClearColor = 0; //Clear Depth flags from HiZ, contained with separate/legacy HiZ when Depth isn't compressible.
@@ -163,17 +164,24 @@ bool GmmLib::GmmResourceInfoCommon::CopyClientParams(GMM_RESCREATE_PARAMS &Creat
                 return false;
             }
             Surf.Flags.Gpu.CCS = 1;
+            AuxSurf.Type       = AuxSurf.Type;
         }
         else if(Surf.MSAA.NumSamples > 1 && Surf.Flags.Gpu.CCS) //MSAA+MCS+CCS
         {
             GMM_ASSERTDPF(Surf.Flags.Gpu.MCS, "Lossless MSAA supported when MSAA+MCS+CCS is unified");
             AuxSecSurf                          = Surf;
+            AuxSecSurf.Type                     = AuxSecSurf.Type;
             AuxSecSurf.Flags.Gpu.MCS            = 0;
             AuxSurf.Flags.Gpu.CCS               = 0;
             AuxSurf.Flags.Info.RenderCompressed = AuxSurf.Flags.Info.MediaCompressed = 0;
         }
+        else if(Surf.Flags.Gpu.CCS)
+        {
+            AuxSurf.Type = AuxSurf.Type;
+        }
 
-        if(GMM_SUCCESS != pTextureCalc->PreProcessTexSpecialCases(&AuxSurf))
+        if(AuxSurf.Type != RESOURCE_INVALID &&
+           GMM_SUCCESS != pTextureCalc->PreProcessTexSpecialCases(&AuxSurf))
         {
             return false;
         }
@@ -339,7 +347,65 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::ValidateParams()
         goto ERROR_CASE;
     }
 
+
+    if(pGmmGlobalContext->GetSkuTable().FtrLocalMemory)
+    {
+        GMM_ASSERTDPF(((Surf.Flags.Info.NonLocalOnly && Surf.Flags.Info.LocalOnly) == 0),
+                      "Incorrect segment preference, cannot be both local and system memory.");
+
+        if(Surf.Flags.Gpu.Overlay ||
+           Surf.Flags.Gpu.FlipChain)
+        {
+            if(Surf.Flags.Info.NonLocalOnly)
+            {
+                GMM_ASSERTDPF(0, "Overlay and FlipChain cannot be in system memory.");
+                goto ERROR_CASE;
+            }
+            Surf.Flags.Info.LocalOnly    = 1;
+            Surf.Flags.Info.NonLocalOnly = 0;
+        }
+
+        if(!Surf.Flags.Info.NotLockable &&
+           Surf.Flags.Info.Shared)
+        {
+            if(Surf.Flags.Info.LocalOnly)
+            {
+                GMM_ASSERTDPF(0, "Lockable Shared cannot be in local memory.");
+                goto ERROR_CASE;
+            }
+            Surf.Flags.Info.LocalOnly    = 0;
+            Surf.Flags.Info.NonLocalOnly = 1;
+        }
+
+        if(Surf.Flags.Gpu.CameraCapture)
+        {
+            if(Surf.Flags.Info.LocalOnly)
+            {
+                GMM_ASSERTDPF(0, "CameraCapture cannot be in local memory.");
+            }
+            Surf.Flags.Info.LocalOnly    = 0;
+            Surf.Flags.Info.NonLocalOnly = 1;
+        }
+
+        if(!Surf.Flags.Info.NonLocalOnly &&
+           (!pGmmGlobalContext->GetSkuTable().FtrLocalMemoryAllows4KB))
+        {
+            Surf.Flags.Info.LocalOnly = true;
+        }
+    }
+    else
+    {
+        Surf.Flags.Info.LocalOnly = false; //Zero out on iGPU
+    }
+
     if((GFX_GET_CURRENT_RENDERCORE(pPlatformResource->Platform) < IGFX_GEN8_CORE) &&
+       Surf.Flags.Info.TiledW)
+    {
+        GMM_ASSERTDPF(0, "Flag not supported on this platform.");
+        goto ERROR_CASE;
+    }
+
+    if((GFX_GET_CURRENT_RENDERCORE(pPlatformResource->Platform) > IGFX_GEN11_CORE) &&
        Surf.Flags.Info.TiledW)
     {
         GMM_ASSERTDPF(0, "Flag not supported on this platform.");
@@ -390,7 +456,7 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::ValidateParams()
         }
     }
 
-    GetRestrictions(Restrictions);
+    pTextureCalc->GetResRestrictions(&Surf, Restrictions);
 
     // Check array size to make sure it meets HW limits
     if((Surf.ArraySize > Restrictions.MaxArraySize) &&
@@ -529,9 +595,10 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::ValidateParams()
     // IndirectClearColor Restrictions
     if((Surf.Flags.Gpu.IndirectClearColor) &&
        !( //--- Legitimate IndirectClearColor Case ------------------------------------------
-       (GFX_GET_CURRENT_RENDERCORE(pPlatformResource->Platform) >= IGFX_GEN9_CORE) &&
-        Surf.Flags.Gpu.UnifiedAuxSurface
-       ))
+       ((GFX_GET_CURRENT_RENDERCORE(pPlatformResource->Platform) >= IGFX_GEN9_CORE) &&
+        Surf.Flags.Gpu.UnifiedAuxSurface) ||
+       ((GFX_GET_CURRENT_RENDERCORE(pPlatformResource->Platform) > IGFX_GEN11_CORE) &&
+        (Surf.Flags.Gpu.HiZ || Surf.Flags.Gpu.SeparateStencil))))
     {
         GMM_ASSERTDPF(0, "Invalid IndirectClearColor usage!");
         goto ERROR_CASE;
@@ -667,6 +734,7 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetDisplayCompressionSupport(
             case GMM_FORMAT_B10G10R10A2_UINT:
             case GMM_FORMAT_B10G10R10A2_UNORM_SRGB:
             case GMM_FORMAT_B10G10R10A2_USCALED:
+            case GMM_FORMAT_R10G10B10_FLOAT_A2_UNORM:
             case GMM_FORMAT_R10G10B10_SNORM_A2_UNORM:
             case GMM_FORMAT_R10G10B10A2_SINT:
             case GMM_FORMAT_R10G10B10A2_SNORM:

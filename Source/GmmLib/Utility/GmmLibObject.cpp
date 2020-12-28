@@ -24,11 +24,15 @@ OTHER DEALINGS IN THE SOFTWARE.
 
 #include "Internal/Common/Platform/GmmGen10Platform.h"
 #include "Internal/Common/Platform/GmmGen11Platform.h"
+#include "Internal/Common/Platform/GmmGen12Platform.h"
 #include "External/Common/CachePolicy/GmmCachePolicyGen10.h"
 #include "External/Common/CachePolicy/GmmCachePolicyGen11.h"
+#include "External/Common/CachePolicy/GmmCachePolicyGen12.h"
+#include "External/Common/CachePolicy/GmmCachePolicyGen12dGPU.h"
 #include "Internal/Common/Texture/GmmTextureCalc.h"
 #include "Internal/Common/Texture/GmmGen10TextureCalc.h"
 #include "Internal/Common/Texture/GmmGen11TextureCalc.h"
+#include "Internal/Common/Texture/GmmGen12TextureCalc.h"
 
 /////////////////////////////////////////////////////////////////////////////////////
 /// Static function to return a PlatformInfo object based on input platform
@@ -60,7 +64,11 @@ GmmLib::PlatformInfo *GmmLib::PlatformInfo::Create(PLATFORM Platform, bool Overr
     }
 #endif
     GMM_DPF_EXIT;
-    if(GFX_GET_CURRENT_RENDERCORE(Platform) >= IGFX_GEN11_CORE)
+    if (GFX_GET_CURRENT_RENDERCORE(Platform) >= IGFX_GEN12_CORE)
+    {
+        return new GmmLib::PlatformInfoGen12(Platform);
+    }
+    else if(GFX_GET_CURRENT_RENDERCORE(Platform) >= IGFX_GEN11_CORE)
     {
         return new GmmLib::PlatformInfoGen11(Platform);
     }
@@ -95,7 +103,18 @@ GmmLib::GmmCachePolicyCommon *GmmLib::GmmCachePolicyCommon::Create()
         return pGmmGlobalContext->GetCachePolicyObj();
     }
 
-    if(GFX_GET_CURRENT_RENDERCORE(pGmmGlobalContext->GetPlatformInfo().Platform) >= IGFX_GEN11_CORE)
+    if (GFX_GET_CURRENT_RENDERCORE(pGmmGlobalContext->GetPlatformInfo().Platform) >= IGFX_GEN12_CORE)
+    {
+        if(pGmmGlobalContext->GetSkuTable().FtrLocalMemory)
+        {
+            pGmmCachePolicy = new GmmLib::GmmGen12dGPUCachePolicy(CachePolicy);
+        }
+        else
+        {
+            pGmmCachePolicy = new GmmLib::GmmGen12CachePolicy(CachePolicy);
+        }
+    }
+    else if(GFX_GET_CURRENT_RENDERCORE(pGmmGlobalContext->GetPlatformInfo().Platform) >= IGFX_GEN11_CORE)
     {
         pGmmCachePolicy = new GmmLib::GmmGen11CachePolicy(CachePolicy);
     }
@@ -158,8 +177,9 @@ GmmLib::GmmTextureCalc *GmmLib::GmmTextureCalc::Create(PLATFORM Platform, uint8_
         case IGFX_GEN11_CORE:
             return new GmmGen11TextureCalc();
             break;
+        case IGFX_GEN12_CORE:
         default:
-            return new GmmGen11TextureCalc();
+            return new GmmGen12TextureCalc();
             break;
     }
 }

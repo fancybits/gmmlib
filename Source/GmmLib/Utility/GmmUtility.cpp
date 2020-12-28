@@ -151,6 +151,7 @@ uint8_t GMM_STDCALL GmmIsUVPacked(GMM_RESOURCE_FORMAT Format)
         case GMM_FORMAT_P012:
         case GMM_FORMAT_P016:
         case GMM_FORMAT_P208:
+        case GMM_FORMAT_P216:
             Status = 1;
             break;
         default:
@@ -177,6 +178,7 @@ bool GMM_STDCALL GmmIsYUVFormatLCUAligned(GMM_RESOURCE_FORMAT Format)
         case GMM_FORMAT_P010:
         case GMM_FORMAT_P016:
         case GMM_FORMAT_YUY2:
+        case GMM_FORMAT_Y210:
         case GMM_FORMAT_Y410:
         case GMM_FORMAT_Y216:
         case GMM_FORMAT_Y416:
@@ -276,6 +278,7 @@ uint8_t GMM_STDCALL GmmIsPlanar(GMM_RESOURCE_FORMAT Format)
         case GMM_FORMAT_P012:
         case GMM_FORMAT_P016:
         case GMM_FORMAT_P208:
+        case GMM_FORMAT_P216:
             Status = 1;
             break;
         default:
@@ -452,6 +455,7 @@ namespace GmmLib
                 case GMM_FORMAT_P012:
                 case GMM_FORMAT_P016:
                 case GMM_FORMAT_P208:
+                case GMM_FORMAT_P216:
                     Planes = 2;
                     break;
                 default:
