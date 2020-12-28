@@ -28,7 +28,7 @@ Description: UMD-TT manager (manages both TR-TT and AUX-TT in user mode space)
 #include "../TranslationTable/GmmUmdTranslationTable.h"
 #include "External/Common/GmmClientContext.h"
 
-#if defined(__linux__)
+#if !defined(_WIN32)
 #include "Internal/Linux/GmmResourceInfoLinInt.h"
 #endif
 
@@ -44,7 +44,7 @@ Description: UMD-TT manager (manages both TR-TT and AUX-TT in user mode space)
         LeaveCriticalSection(&PoolLock); \
     }
 
-#if defined(__linux__)
+#if !defined(_WIN32)
 GMM_STATUS GmmLib::__GmmDeviceAlloc(GmmClientContext *        pClientContext,
                                     GMM_DEVICE_CALLBACKS_INT *pDeviceCbInt,
                                     GMM_DEVICE_ALLOC *        pAlloc)
@@ -412,7 +412,7 @@ ERROR_CASE:
 /////////////////////////////////////////////////////////////////////////////////////
 GMM_GFX_ADDRESS GmmLib::GmmPageTableMgr::GetAuxL3TableAddr()
 {
-    return AuxTTObj ? AuxTTObj->GetL3Address() : NULL;
+    return AuxTTObj ? AuxTTObj->GetL3Address() : 0;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -471,7 +471,7 @@ GMM_STATUS GmmLib::GmmPageTableMgr::InitContextAuxTableRegister(HANDLE CmdQHandl
 /////////////////////////////////////////////////////////////////////////////////////
 GMM_STATUS GmmLib::GmmPageTableMgr::UpdateAuxTable(const GMM_DDI_UPDATEAUXTABLE *UpdateReq)
 {
-    if(GetAuxL3TableAddr() == NULL)
+    if(GetAuxL3TableAddr() == 0)
     {
         GMM_ASSERTDPF(0, "Invalid AuxTable update request, AuxTable is not initialized");
         return GMM_INVALIDPARAM;
@@ -606,7 +606,7 @@ GMM_STATUS GmmLib::GmmPageTableMgr::UpdateAuxTable(const GMM_DDI_UPDATEAUXTABLE 
     return GMM_SUCCESS;
 }
 
-#if defined(__linux__) && !_WIN32
+#if !defined(_WIN32)
 /////////////////////////////////////////////////////////////////////////////////////
 /// Gets size of PageTable buffer object (BOs) list
 ///
