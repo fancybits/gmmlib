@@ -298,5 +298,12 @@ DEFINE_CACHE_ELEMENT( GMM_RESOURCE_USAGE_BLT_DESTINATION                        
 
 DEFINE_CACHE_ELEMENT(GMM_RESOURCE_USAGE_CAMERA_CAPTURE                                        , CAM$, 0    , 0  , 0  , CAM$ , 0,     0,       0,      0,    0,   0,    0,    NA );
 
+// Uncacheable copies
+DEFINE_CACHE_ELEMENT(GMM_RESOURCE_USAGE_COPY_SOURCE                                           , 0   , 0    , 0  , 0  , 0 ,    0,     0,       0,      0,    0,   0,    0,   NA);
+DEFINE_CACHE_ELEMENT(GMM_RESOURCE_USAGE_COPY_DEST                                             , 0   , 0    , 0  , 0  , 0 ,    0,     0,       0,      0,    0,   0,    0,   NA);
+
+// Shader resource uncachable, needed for WA_18013889147
+DEFINE_CACHE_ELEMENT(GMM_RESOURCE_USAGE_SHADER_RESOURCE_L1_NOT_CACHED                         , 0   , 1    , 1  , 0  , 0 ,    0,     0,       0,      0,    0,   0,    0,    RO );
+
 #include "GmmCachePolicyUndefineConditionals.h"
 

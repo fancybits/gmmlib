@@ -348,7 +348,8 @@ void GmmLib::GmmGen11TextureCalc::FillPlanarOffsetAddress(GMM_TEXTURE_INFO *pTex
 
         if(GFX_GET_CURRENT_RENDERCORE(pPlatform->Platform) > IGFX_GEN11LP_CORE)
         {
-            if(pTexInfo->Flags.Gpu.CCS)
+
+            if(pTexInfo->Flags.Gpu.CCS && !pGmmGlobalContext->GetSkuTable().FtrFlatPhysCCS)
             {
                 //U/V must be aligned to AuxT granularity, for 16K AuxT- 4x pitchalign enforces it,
                 //add extra padding for 64K AuxT
@@ -368,6 +369,21 @@ void GmmLib::GmmGen11TextureCalc::FillPlanarOffsetAddress(GMM_TEXTURE_INFO *pTex
             *pUOffsetY += pTexInfo->OffsetInfo.Plane.Y[GMM_PLANE_Y];
             *pVOffsetY = *pUOffsetY;
         }
+
+	// This is needed for FtrDisplayPageTables
+        if(pGmmGlobalContext->GetSkuTable().FtrDisplayPageTables)
+        {
+            pTexInfo->OffsetInfo.Plane.Aligned.Height[GMM_PLANE_Y] = GFX_ALIGN(YHeight, TileHeight);
+            if(pTexInfo->OffsetInfo.Plane.NoOfPlanes == 2)
+            {
+                pTexInfo->OffsetInfo.Plane.Aligned.Height[GMM_PLANE_U] = GFX_ALIGN(VHeight, TileHeight);
+            }
+            else if(pTexInfo->OffsetInfo.Plane.NoOfPlanes == 3)
+            {
+                pTexInfo->OffsetInfo.Plane.Aligned.Height[GMM_PLANE_U] =
+                pTexInfo->OffsetInfo.Plane.Aligned.Height[GMM_PLANE_V] = GFX_ALIGN(VHeight, TileHeight);
+            }
+	}
     }
 
     //Special case LKF MMC compressed surfaces
@@ -1083,6 +1099,14 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmGen11TextureCalc::FillTexPlanar(GMM_TEXTURE_IN
             (pTexInfo->BaseWidth * pTexInfo->BitsPerPixel / 8) >= (GMM_KBYTE(8) - 128)))
         {
             pTexInfo->Flags.Gpu.MMC = 0;
+        }
+    }
+
+    if(pTexInfo->Flags.Info.RedecribedPlanes)
+    {
+        if(false == RedescribeTexturePlanes(pTexInfo, &WidthBytesPhysical))
+        {
+            __GMM_ASSERT(FALSE);
         }
     }
 

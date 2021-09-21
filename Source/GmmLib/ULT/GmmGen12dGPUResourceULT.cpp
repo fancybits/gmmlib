@@ -35,8 +35,8 @@ using namespace std;
 void CTestGen12dGPUResource::SetUpTestCase()
 {
     printf("%s\n", __FUNCTION__);
-    GfxPlatform.eProductFamily    = IGFX_DG1;
-    GfxPlatform.eRenderCoreFamily = IGFX_GEN12_CORE;
+    GfxPlatform.eProductFamily    = IGFX_XE_HP_SDV;
+    GfxPlatform.eRenderCoreFamily = IGFX_XE_HP_CORE;
 
     pGfxAdapterInfo = (ADAPTER_INFO *)malloc(sizeof(ADAPTER_INFO));
     if(pGfxAdapterInfo)
@@ -971,9 +971,8 @@ TEST_F(CTestGen12dGPUResource, DISABLED_TestPlanarYCompressedResource)
 }
 
 /// @brief ULT for Planar Ys Compressed resource
-TEST_F(CTestGen12dGPUResource, DISABLED_TestPlanarYsCompressedResource)
+TEST_F(CTestGen12dGPUResource, TestPlanarTile64CompressedResource)
 {
-    const TEST_TILE_TYPE TileTypeSupported = {TEST_TILEYS};
 
     const uint32_t TileSize[TEST_BPP_MAX][2] = {
     {256, 256}, {512, 128}, {512, 128}, {1024, 64}, {1024, 64}}; // TileYS
@@ -986,10 +985,10 @@ TEST_F(CTestGen12dGPUResource, DISABLED_TestPlanarYsCompressedResource)
     //gmmParams.Flags.Gpu.CCS = 1;
     gmmParams.Flags.Gpu.UnifiedAuxSurface = 1;
     gmmParams.Flags.Info.MediaCompressed  = 1;
-    gmmParams.BaseWidth64                 = 0x100;
-    gmmParams.BaseHeight                  = 0x50;
+    gmmParams.BaseWidth64                 = 0x64;
+    gmmParams.BaseHeight                  = 0x64;
     gmmParams.Depth                       = 0x1;
-    SetTileFlag(gmmParams, TEST_TILEYS); // TileYS only
+    gmmParams.ArraySize                   = 2;
 
     GMM_RESOURCE_FORMAT Format[4] = {GMM_FORMAT_NV12, GMM_FORMAT_NV21, GMM_FORMAT_P010, GMM_FORMAT_P016};
     for(auto fmt : Format)
@@ -997,7 +996,7 @@ TEST_F(CTestGen12dGPUResource, DISABLED_TestPlanarYsCompressedResource)
         gmmParams.Format = fmt; // 8bpp(NV12) , P016 (16bpp), P010 (16bpp), NV21(8bpp)
 
         TEST_BPP Ybpp, UVbpp;
-        //Yf/Ys could be accessed on CPU/app where UV plane bpp is double
+        //could be accessed on CPU/app where UV plane bpp is double
         switch(pGmmULTClientContext->GetPlatformInfo().FormatTable[gmmParams.Format].Element.BitsPer)
         {
             case 8:
@@ -1013,63 +1012,39 @@ TEST_F(CTestGen12dGPUResource, DISABLED_TestPlanarYsCompressedResource)
         }
 
         gmmParams.Flags.Gpu.UnifiedAuxSurface = 1;
-        GMM_TILE_MODE TileMode                = DEFINE_TILE(YS_2D, Ybpp);
 
         GMM_RESOURCE_INFO *ResourceInfo;
         ResourceInfo = pGmmULTClientContext->CreateResInfoObject(&gmmParams);
+	
+	GMM_REQ_OFFSET_INFO OffsetInfo = {};
 
-        //Redescribed Pitch isn't modified unless Y, UV pitch differ
-        //But, original Pitch is padded to have even Tile, hence use Ybpp ExpectedPitch
-        //to verify Pitch, but redescribed pitch to verify size
-        uint32_t ExpectedPitch    = GMM_ULT_ALIGN(gmmParams.BaseWidth64 * (int)pow(2.0, Ybpp), TileSize[Ybpp][0]);
-        uint32_t RedescribedPitch = GMM_ULT_ALIGN(gmmParams.BaseWidth64 / 2 * (int)pow(2.0, UVbpp), TileSize[UVbpp][0]);
+        OffsetInfo.ReqLock             = 1;
+        OffsetInfo.ReqRender           = 1;
+        OffsetInfo.Plane               = GMM_PLANE_Y;
+        OffsetInfo.ArrayIndex          = 1;
+        OffsetInfo.ReqStdLayout        = 0;
+        ResourceInfo->GetOffset(OffsetInfo);
+         
+	// ToDo: add verification
+        //{ //separate Aux
+        //    gmmParams.Flags.Gpu.UnifiedAuxSurface = 0;
+	//    GMM_RESOURCE_INFO *AuxResourceInfo;
+        //    AuxResourceInfo = pGmmULTClientContext->CreateResInfoObject(&gmmParams);
+        //    EXPECT_EQ(ResourceInfo->GetSizeAuxSurface(GMM_AUX_CCS), AuxResourceInfo->G
 
-        if(ExpectedPitch != RedescribedPitch)
-        {
-            ExpectedPitch = RedescribedPitch;
-        }
-        else
-        {
-            //ExpectedPitch = GMM_ULT_ALIGN(ExpectedPitch, 2 * TileSize[Ybpp][0]); //pad to even tile
-            //ExpectedPitch = GMM_ULT_ALIGN(ExpectedPitch, (2 * TileSize[UVbpp][0]/ (int)pow(2.0, UVbpp))); //pad to even tile
-        }
+        // add verification
 
-        VerifyResourcePitch<true>(ResourceInfo, ExpectedPitch);
-        VerifyResourcePitchInTiles<true>(ResourceInfo, ExpectedPitch / TileSize[Ybpp][0]);
+        //{ //separate Aux
+        //    gmmParams.Flags.Gpu.UnifiedAuxSurface = 0;
 
-        int YSizeInTiles = (GMM_ULT_ALIGN(gmmParams.BaseHeight, TileSize[Ybpp][1]) / TileSize[Ybpp][1]) *
-                           RedescribedPitch / TileSize[Ybpp][0];
-        int UVSizeInTiles = (GMM_ULT_ALIGN(gmmParams.BaseHeight / 2, TileSize[UVbpp][1]) / TileSize[UVbpp][1]) *
-                            RedescribedPitch / TileSize[UVbpp][0];
-        VerifyResourceSize<true>(ResourceInfo, GMM_KBYTE(64) * (YSizeInTiles + UVSizeInTiles));
-        VerifyResourceHAlign<true>(ResourceInfo, TileSize[UVbpp][0] / pow(2.0, UVbpp)); // For Yf/Ys planar redescription causes UV width, Y height alignment
-        VerifyResourceVAlign<true>(ResourceInfo, TileSize[Ybpp][1]);
-        VerifyResourceQPitch<false>(ResourceInfo, 0); // N/A for non-mipped surface
+        //    GMM_RESOURCE_INFO *AuxResourceInfo;
+        //    AuxResourceInfo = pGmmULTClientContext->CreateResInfoObject(&gmmParams);
 
-        //test main surface base alignment is 16KB
-        //For Yf test main surface pitch is 4-tileYF aligned
-        EXPECT_EQ(GMM_KBYTE(64), ResourceInfo->GetBaseAlignment());
-        //EXPECT_EQ(0, ResourceInfo->GetRenderPitchTiles() % 4);   // Check on YF only
+        //    EXPECT_EQ(ResourceInfo->GetSizeAuxSurface(GMM_AUX_CCS), AuxResourceInfo->GetSizeSurface());
 
-        if(const_cast<SKU_FEATURE_TABLE &>(pGfxAdapterInfo->SkuTable).FtrLinearCCS)
-        {
-            EXPECT_EQ(0, ResourceInfo->GetUnifiedAuxSurfaceOffset(GMM_AUX_CCS) % PAGE_SIZE);
-            EXPECT_EQ(0, ResourceInfo->GetUnifiedAuxSurfaceOffset(GMM_AUX_UV_CCS) % PAGE_SIZE);
-            EXPECT_GE(ResourceInfo->GetSizeAuxSurface(GMM_AUX_CCS), ResourceInfo->GetSizeMainSurface() >> 8);
-        }
+        //    pGmmULTClientContext->DestroyResInfoObject(AuxResourceInfo);
+        //}
 
-        EXPECT_EQ(GMM_KBYTE(4) * 2, ResourceInfo->GetSizeAuxSurface(GMM_AUX_CCS)); // Y and UV Aux are on separate tiles
-
-        { //separate Aux
-            gmmParams.Flags.Gpu.UnifiedAuxSurface = 0;
-
-            GMM_RESOURCE_INFO *AuxResourceInfo;
-            AuxResourceInfo = pGmmULTClientContext->CreateResInfoObject(&gmmParams);
-
-            EXPECT_EQ(ResourceInfo->GetSizeAuxSurface(GMM_AUX_CCS), AuxResourceInfo->GetSizeSurface());
-
-            pGmmULTClientContext->DestroyResInfoObject(AuxResourceInfo);
-        }
         pGmmULTClientContext->DestroyResInfoObject(ResourceInfo);
     }
 }
@@ -2119,7 +2094,7 @@ TEST_F(CTestGen12dGPUResource, DISABLED_TestLinearCompressedResource)
         gmmParams.Format                         = SetResourceFormat(bpp);
         gmmParams.BaseWidth64                    = 0x1;
         gmmParams.BaseHeight                     = 1;
-        gmmParams.Flags.Info.AllowVirtualPadding = (bpp != 8); //OCL uses 8bpp buffers. Specification doesn't comment if Linear buffer compr allowed or not on bpp!=8.
+        gmmParams.Flags.Info.AllowVirtualPadding = (bpp != TEST_BPP_8); //OCL uses 8bpp buffers. Specification doesn't comment if Linear buffer compr allowed or not on bpp!=8.
 
         GMM_RESOURCE_INFO *ResourceInfo;
         ResourceInfo = pGmmULTClientContext->CreateResInfoObject(&gmmParams);
@@ -2164,7 +2139,7 @@ TEST_F(CTestGen12dGPUResource, DISABLED_TestLinearCompressedResource)
         gmmParams.Format                         = SetResourceFormat(bpp);
         gmmParams.BaseWidth64                    = 0x1001;
         gmmParams.BaseHeight                     = 1;
-        gmmParams.Flags.Info.AllowVirtualPadding = (bpp != 8); //OCL uses 8bpp buffers. Specification doesn't comment if Linear buffer compr allowed or not on bpp!=8.
+        gmmParams.Flags.Info.AllowVirtualPadding = (bpp != TEST_BPP_8); //OCL uses 8bpp buffers. Specification doesn't comment if Linear buffer compr allowed or not on bpp!=8.
         gmmParams.Flags.Gpu.UnifiedAuxSurface    = 1;          //Turn off for separate aux creation
         gmmParams.Flags.Gpu.CCS                  = 1;
 
@@ -2203,12 +2178,12 @@ TEST_F(CTestGen12dGPUResource, DISABLED_TestLinearCompressedResource)
         pGmmULTClientContext->DestroyResInfoObject(ResourceInfo);
     }
 }
-///TODO Add MSAA/Depth Compressed Resource tests
+///Add MSAA/Depth Compressed Resource tests
 TEST_F(CTestGen12dGPUResource, DISABLED_TestLosslessMSAACompressedResource)
 {
 }
 
-///TODO Add MSAA/Depth Compressed Resource tests
+///Add MSAA/Depth Compressed Resource tests
 TEST_F(CTestGen12dGPUResource, DISABLED_TestDepthCompressedResource)
 {
     const uint32_t HAlign = 8;
@@ -2291,7 +2266,7 @@ TEST_F(CTestGen12dGPUResource, DISABLED_TestDepthCompressedResource)
             VerifyResourcePitch<true>(ResourceInfo, ExpectedPitch);
             VerifyResourcePitchInTiles<true>(ResourceInfo, 4); // 2 tileY wide
 
-            uint32_t ExpectedQPitch;
+            uint32_t ExpectedQPitch = 0;
             if(gmmParams.ArraySize > 1 || gmmParams.Type == RESOURCE_CUBE)
             {
                 ExpectedQPitch = GMM_ULT_ALIGN(gmmParams.BaseHeight, VAlign);
@@ -2329,7 +2304,7 @@ TEST_F(CTestGen12dGPUResource, DISABLED_TestDepthCompressedResource)
             VerifyResourcePitch<true>(ResourceInfo, ExpectedPitch);
             VerifyResourcePitchInTiles<true>(ResourceInfo, 4); // 2 tile wide
 
-            uint32_t TwoDQPitch, ExpectedQPitch;
+            uint32_t TwoDQPitch, ExpectedQPitch = 0;
             if(gmmParams.Type == RESOURCE_3D)
             {
                 TwoDQPitch     = GMM_ULT_ALIGN(gmmParams.BaseHeight, VAlign);

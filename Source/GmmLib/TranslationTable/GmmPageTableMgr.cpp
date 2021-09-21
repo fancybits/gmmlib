@@ -353,7 +353,8 @@ GmmLib::GmmPageTableMgr::GmmPageTableMgr(GMM_DEVICE_CALLBACKS_INT *DeviceCB, uin
         ptr->pClientContext = pClientContextIn;
         memcpy(&ptr->DeviceCbInt, DeviceCB, sizeof(GMM_DEVICE_CALLBACKS_INT));
 
-        if(pGmmGlobalContext->GetSkuTable().FtrE2ECompression)
+        if(pGmmGlobalContext->GetSkuTable().FtrE2ECompression &&
+           !pGmmGlobalContext->GetSkuTable().FtrFlatPhysCCS)
         {
             __GMM_ASSERT(TTFlags & AUXTT); //Aux-TT is mandatory
             ptr->AuxTTObj = new AuxTable();
@@ -412,7 +413,7 @@ ERROR_CASE:
 /////////////////////////////////////////////////////////////////////////////////////
 GMM_GFX_ADDRESS GmmLib::GmmPageTableMgr::GetAuxL3TableAddr()
 {
-    return AuxTTObj ? AuxTTObj->GetL3Address() : 0;
+    return AuxTTObj ? AuxTTObj->GetL3Address() : 0ULL;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -471,7 +472,7 @@ GMM_STATUS GmmLib::GmmPageTableMgr::InitContextAuxTableRegister(HANDLE CmdQHandl
 /////////////////////////////////////////////////////////////////////////////////////
 GMM_STATUS GmmLib::GmmPageTableMgr::UpdateAuxTable(const GMM_DDI_UPDATEAUXTABLE *UpdateReq)
 {
-    if(GetAuxL3TableAddr() == 0)
+    if(GetAuxL3TableAddr() == 0ULL)
     {
         GMM_ASSERTDPF(0, "Invalid AuxTable update request, AuxTable is not initialized");
         return GMM_INVALIDPARAM;
