@@ -25,14 +25,14 @@ project(igfx_gmmumd)
 
 # GmmLib Api Version used for so naming
 set(GMMLIB_API_MAJOR_VERSION 12)
-set(GMMLIB_API_MINOR_VERSION 1)
+set(GMMLIB_API_MINOR_VERSION 2)
 
 if(NOT DEFINED MAJOR_VERSION)
 	set(MAJOR_VERSION 12)
 endif()
 
 if(NOT DEFINED MINOR_VERSION)
-	set(MINOR_VERSION 1)
+	set(MINOR_VERSION 2)
 endif()
 
 if(NOT DEFINED PATCH_VERSION)
@@ -151,6 +151,10 @@ else()
     set(CMAKE_BUILD_TYPE "ReleaseInternal")
   elseif("${BUILD_TYPE}" STREQUAL "debug")
     set(CMAKE_BUILD_TYPE "Debug")
+  elseif("${BUILD_TYPE}" STREQUAL "RelWithDebInfo")
+    set(CMAKE_BUILD_TYPE "RelWithDebInfo")
+  elseif("${BUILD_TYPE}" STREQUAL "MinSizeRel")
+    set(CMAKE_BUILD_TYPE "MinSizeRel")
   endif()
 
 endif()
@@ -445,7 +449,7 @@ include(Linux.cmake)
 ###################################################################################
 # create dll library
 ###################################################################################
-add_library( ${GMM_LIB_DLL_NAME} SHARED igdgmm.rc ${UMD_SOURCES} ${UMD_HEADERS})
+add_library( ${GMM_LIB_DLL_NAME} STATIC igdgmm.rc ${UMD_SOURCES} ${UMD_HEADERS})
 
 if(MSVC)
 
