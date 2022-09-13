@@ -45,8 +45,8 @@ void CTestGen12Resource::SetUpTestCase()
 
         pGfxAdapterInfo->SkuTable.FtrLinearCCS = 1; //legacy y =>0 - test both
         pGfxAdapterInfo->SkuTable.FtrTileY     = 1;
-        pGfxAdapterInfo->SkuTable.FtrLLCBypass = 1;
-        CommonULT::SetUpTestCase();
+        pGfxAdapterInfo->SkuTable.FtrLLCBypass = 0;
+	CommonULT::SetUpTestCase();
     }
 }
 
@@ -966,7 +966,7 @@ TEST_F(CTestGen12Resource, TestPlanarYCompressedResource)
 }
 
 /// @brief ULT for Planar Ys Compressed resource
-TEST_F(CTestGen12Resource, TestPlanarYsCompressedResource)
+TEST_F(CTestGen12Resource, DISABLED_TestPlanarYsCompressedResource)
 {
     const TEST_TILE_TYPE TileTypeSupported = {TEST_TILEYS};
 
@@ -2114,7 +2114,7 @@ TEST_F(CTestGen12Resource, TestLinearCompressedResource)
         gmmParams.Format                         = SetResourceFormat(bpp);
         gmmParams.BaseWidth64                    = 0x1;
         gmmParams.BaseHeight                     = 1;
-        gmmParams.Flags.Info.AllowVirtualPadding = (bpp != 8); //OCL uses 8bpp buffers. doc doesn't comment if Linear buffer compr allowed or not on bpp!=8.
+        gmmParams.Flags.Info.AllowVirtualPadding = (bpp != TEST_BPP_8); //OCL uses 8bpp buffers. doc doesn't comment if Linear buffer compr allowed or not on bpp!=8.
 
         GMM_RESOURCE_INFO *ResourceInfo;
         ResourceInfo = pGmmULTClientContext->CreateResInfoObject(&gmmParams);
@@ -2159,7 +2159,7 @@ TEST_F(CTestGen12Resource, TestLinearCompressedResource)
         gmmParams.Format                         = SetResourceFormat(bpp);
         gmmParams.BaseWidth64                    = 0x1001;
         gmmParams.BaseHeight                     = 1;
-        gmmParams.Flags.Info.AllowVirtualPadding = (bpp != 8); //OCL uses 8bpp buffers. document doesn't comment if Linear buffer compr allowed or not on bpp!=8.
+        gmmParams.Flags.Info.AllowVirtualPadding = (bpp != TEST_BPP_8); //OCL uses 8bpp buffers. document doesn't comment if Linear buffer compr allowed or not on bpp!=8.
         gmmParams.Flags.Gpu.UnifiedAuxSurface    = 1;          //Turn off for separate aux creation
         gmmParams.Flags.Gpu.CCS                  = 1;
 
@@ -2286,7 +2286,7 @@ TEST_F(CTestGen12Resource, DISABLED_TestDepthCompressedResource)
             VerifyResourcePitch<true>(ResourceInfo, ExpectedPitch);
             VerifyResourcePitchInTiles<true>(ResourceInfo, 4); // 2 tileY wide
 
-            uint32_t ExpectedQPitch;
+            uint32_t ExpectedQPitch = 0;
             if(gmmParams.ArraySize > 1 || gmmParams.Type == RESOURCE_CUBE)
             {
                 ExpectedQPitch = GMM_ULT_ALIGN(gmmParams.BaseHeight, VAlign);
@@ -2324,7 +2324,7 @@ TEST_F(CTestGen12Resource, DISABLED_TestDepthCompressedResource)
             VerifyResourcePitch<true>(ResourceInfo, ExpectedPitch);
             VerifyResourcePitchInTiles<true>(ResourceInfo, 4); // 2 tile wide
 
-            uint32_t TwoDQPitch, ExpectedQPitch;
+            uint32_t TwoDQPitch, ExpectedQPitch = 0;
             if(gmmParams.Type == RESOURCE_3D)
             {
                 TwoDQPitch     = GMM_ULT_ALIGN(gmmParams.BaseHeight, VAlign);
@@ -2539,7 +2539,8 @@ TEST_F(CTestGen12Resource, Test2DTileYfAMFSResource)
         VerifyResourceVAlign<true>(ResourceInfo, VAlign[i]);
         VerifyResourcePitch<true>(ResourceInfo, TileSize[i][0]); // As wide as 1 Tile
         VerifyResourcePitchInTiles<true>(ResourceInfo, 1);       // 1 Tile wide
-        VerifyResourceSize<true>(ResourceInfo, GMM_KBYTE(4));    // 1 Tile Big
+        //VerifyResourceSize<true>(ResourceInfo, GMM_KBYTE(4));    // 1 Tile Big,  old behaviour consuming bytes for main-surface (paired Texture dimensions) only used to obtain GPUVA for indirect (Auxtable mapped) CCS access by sampler.
+	VerifyResourceSize<true>(ResourceInfo, 0);    // New behaviour, optimized SFT size, sampler doesn't access CCS via main.. kernels refer the CCS-via its GPUVA (w/o main).
         VerifyResourceQPitch<false>(ResourceInfo, 0);            // Not Tested
 
         //test main surface base alignment is 4KB, since AMFS PT isn't compressed
@@ -2586,7 +2587,8 @@ TEST_F(CTestGen12Resource, Test2DTileYfAMFSResource)
         VerifyResourceVAlign<true>(ResourceInfo, VAlign[i]);
         VerifyResourcePitch<true>(ResourceInfo, TileSize[i][0] * 2); // As wide as 2 tile
         VerifyResourcePitchInTiles<true>(ResourceInfo, 2);           // 2 tile wide
-        VerifyResourceSize<true>(ResourceInfo, GMM_KBYTE(4) * 2);    // 2 tile big
+        //VerifyResourceSize<true>(ResourceInfo, GMM_KBYTE(4) * 2);    // 2 tile big, old behaviour consuming bytes for main-surface (paired Texture dimensions) only used to obtain GPUVA for indirect (Auxtable mapped) CCS access by sampler.
+        VerifyResourceSize<true>(ResourceInfo, 0); // New behaviour, optimized SFT size, sampler doesn't access CCS via main.. kernels refer the CCS-via its GPUVA (w/o main).
 
         VerifyResourceQPitch<false>(ResourceInfo, 0); // Not tested
 
@@ -2632,7 +2634,8 @@ TEST_F(CTestGen12Resource, Test2DTileYfAMFSResource)
         VerifyResourceVAlign<true>(ResourceInfo, VAlign[i]);
         VerifyResourcePitch<true>(ResourceInfo, TileSize[i][0] * 2);  // As wide as 2 tile
         VerifyResourcePitchInTiles<true>(ResourceInfo, 2);            // 2 tile wide
-        VerifyResourceSize<true>(ResourceInfo, GMM_KBYTE(4) * 2 * 2); // 2 tile wide; and 2-tile high
+        //VerifyResourceSize<true>(ResourceInfo, GMM_KBYTE(4) * 2 * 2); // 2 tile wide; and 2-tile high, old behaviour consuming bytes for main-surface (paired Texture dimensions) only used to obtain GPUVA for indirect (Auxtable mapped) CCS access by sampler.
+        VerifyResourceSize<true>(ResourceInfo, 0); // New behaviour, optimized SFT size, sampler doesn't access CCS via main.. kernels refer the CCS-via its GPUVA (w/o main).
 
         VerifyResourceQPitch<false>(ResourceInfo, 0); // Not tested
                                                       //test main surface base alignment is 4KB

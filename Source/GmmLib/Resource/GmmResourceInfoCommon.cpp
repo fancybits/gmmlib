@@ -42,7 +42,7 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::Is64KBPageSuitable()
        Surf.Flags.Gpu.CameraCapture ||
        Surf.Flags.Info.KernelModeMapped ||
        (Surf.Flags.Gpu.S3d && !Surf.Flags.Gpu.S3dDx &&
-        !pGmmGlobalContext->GetSkuTable().FtrDisplayEngineS3d)
+        !GetGmmLibContext()->GetSkuTable().FtrDisplayEngineS3d)
 #if(LHDM)
        || (Surf.Flags.Info.AllowVirtualPadding &&
            ExistingSysMem.hParentAllocation)
@@ -52,23 +52,24 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::Is64KBPageSuitable()
         Ignore64KBPadding = true;
     }
 
-    if(pGmmGlobalContext->GetSkuTable().FtrLocalMemory)
-    {
+    if(GetGmmLibContext()->GetSkuTable().FtrLocalMemory)
+     {
         Ignore64KBPadding |= (Surf.Flags.Info.NonLocalOnly || (Surf.Flags.Info.Shared && !Surf.Flags.Info.NotLockable));
-        Ignore64KBPadding |= (pGmmGlobalContext->GetSkuTable().FtrLocalMemoryAllows4KB && Surf.Flags.Info.NoOptimizationPadding);
+        Ignore64KBPadding |= (GetGmmLibContext()->GetSkuTable().FtrLocalMemoryAllows4KB && Surf.Flags.Info.NoOptimizationPadding);
+	Ignore64KBPadding |= ((GetGmmLibContext()->GetSkuTable().FtrLocalMemoryAllows4KB) && (((Size * (100 + (GMM_GFX_SIZE_T)GetGmmLibContext()->GetAllowedPaddingFor64KbPagesPercentage())) / 100) < GFX_ALIGN(Size, GMM_KBYTE(64)))); 
     }
     else
     {
         // The final padded size cannot be larger then a set percentage of the original size
         if((Surf.Flags.Info.NoOptimizationPadding && !GFX_IS_ALIGNED(Size, GMM_KBYTE(64))) /*Surface is not 64kb aligned*/ ||
-           (!Surf.Flags.Info.NoOptimizationPadding && (((Size * (100 + pGmmGlobalContext->GetAllowedPaddingFor64KbPagesPercentage())) / 100) < GFX_ALIGN(Size, GMM_KBYTE(64)))) /*10% padding TBC */)
+           (!Surf.Flags.Info.NoOptimizationPadding && (((Size * (100 + GetGmmLibContext()->GetAllowedPaddingFor64KbPagesPercentage())) / 100) < GFX_ALIGN(Size, GMM_KBYTE(64)))) /*10% padding TBC */)
         {
             Ignore64KBPadding |= true;
         }
     }
 
     // If 64KB paging is enabled pad out the resource to 64KB alignment
-    if(pGmmGlobalContext->GetSkuTable().FtrWddm2_1_64kbPages &&
+    if(GetGmmLibContext()->GetSkuTable().FtrWddm2_1_64kbPages &&
        // Ignore the padding for the above VirtualPadding or ESM cases
        (!Ignore64KBPadding) &&
        // Resource must be 64KB aligned
@@ -98,14 +99,9 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::Is64KBPageSuitable()
 GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::Create(GMM_RESCREATE_PARAMS &CreateParams)
 {
     GMM_STATUS Status = GMM_ERROR;
-
-#if defined(__GMM_KMD__)
-    ClientType = GMM_KMD_VISTA;
-#else
-    GET_GMM_CLIENT_TYPE(pClientContext, ClientType);
-#endif
-
-    Status = Create(*pGmmGlobalContext, CreateParams);
+    // ToDo: Only Vk is using this Create API directly. Derive the GmmLibCOntext from the ClientContext stored in
+    // ResInfo object.
+    Status = Create(*(reinterpret_cast<GMM_CLIENT_CONTEXT *>(pClientContext)->GetLibContext()), CreateParams);
 
     return Status;
 }
@@ -130,14 +126,14 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::CreateCustomRes(Context &G
 
     GMM_DPF_ENTER;
 
-    __GMM_ASSERTPTR(pGmmGlobalContext, GMM_ERROR);
-    pGmmLibContext = reinterpret_cast<uint64_t>(&GmmLibContext);
+    GET_GMM_CLIENT_TYPE(pClientContext, ClientType);
+    pGmmUmdLibContext = reinterpret_cast<uint64_t>(&GmmLibContext);
 
 
     if((CreateParams.Format > GMM_FORMAT_INVALID) &&
        (CreateParams.Format < GMM_RESOURCE_FORMATS))
     {
-        BitsPerPixel = pGmmGlobalContext->GetPlatformInfo().FormatTable[CreateParams.Format].Element.BitsPer;
+        BitsPerPixel = GetGmmLibContext()->GetPlatformInfo().FormatTable[CreateParams.Format].Element.BitsPer;
     }
     else
     {
@@ -146,8 +142,8 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::CreateCustomRes(Context &G
         goto ERROR_CASE;
     }
 
-    pPlatform    = GMM_OVERRIDE_PLATFORM_INFO(&Surf);
-    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf);
+    pPlatform    = GMM_OVERRIDE_PLATFORM_INFO(&Surf, GetGmmLibContext());
+    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
 
     Surf.Type                    = CreateParams.Type;
     Surf.Format                  = CreateParams.Format;
@@ -160,9 +156,10 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::CreateCustomRes(Context &G
     Surf.Alignment.BaseAlignment = CreateParams.BaseAlignment;
     Surf.MaxLod                  = 1;
     Surf.ArraySize               = 1;
+    Surf.CpTag                   = CreateParams.CpTag;
 
 #if(_DEBUG || _RELEASE_INTERNAL)
-    Surf.Platform = pGmmGlobalContext->GetPlatformInfo().Platform;
+    Surf.Platform = GetGmmLibContext()->GetPlatformInfo().Platform;
 #endif
     Surf.BitsPerPixel     = BitsPerPixel;
     Surf.Alignment.QPitch = (GMM_GLOBAL_GFX_SIZE_T)(Surf.Pitch * Surf.BaseHeight);
@@ -181,7 +178,12 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::CreateCustomRes(Context &G
             Surf.OffsetInfo.Plane.Y[i] = CreateParams.PlaneOffset.Y[i];
         }
         Surf.OffsetInfo.Plane.NoOfPlanes  = CreateParams.NoOfPlanes;
-        Surf.OffsetInfo.Plane.ArrayQPitch = Surf.Pitch * Surf.BaseHeight;
+
+        if (Surf.ArraySize > 1)
+        {
+            //Surf.OffsetInfo.Plane.ArrayQPitch = Surf.Size;  //Not required as this new interface doesn't support arrayed surfaces.
+        }
+
         UpdateUnAlignedParams();
     }
 
@@ -202,8 +204,13 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::CreateCustomRes(Context &G
         case RESOURCE_WGBOX_ENCODE_REFERENCE:
 #endif
         {
-            Surf.OffsetInfo.Texture2DOffsetInfo.ArrayQPitchRender =
-            Surf.OffsetInfo.Texture2DOffsetInfo.ArrayQPitchLock = Surf.Pitch * Surf.BaseHeight;
+
+        if (Surf.ArraySize > 1)
+        {
+           // Surf.OffsetInfo.Texture2DOffsetInfo.ArrayQPitchRender =
+           // Surf.OffsetInfo.Texture2DOffsetInfo.ArrayQPitchLock = Surf.Pitch * Surf.BaseHeight;  //Not required as this new interface doesn't support arrayed surfaces.
+        }
+
             for(i = 0; i <= Surf.MaxLod; i++)
             {
                 Surf.OffsetInfo.Texture2DOffsetInfo.Offset[i] = 0;
@@ -230,6 +237,192 @@ ERROR_CASE:
     GMM_DPF_EXIT;
     return Status;
 }
+
+#ifndef __GMM_KMD__
+/////////////////////////////////////////////////////////////////////////////////////
+/// Allows clients to "create"  Custom memory layout received from the App as user pointer or DMABUF
+// This function does not allocate any memory for the resource. It just calculates/ populates the various parameters
+/// which are useful for the client and can be queried using other functions.
+///
+/// @param[in]  GmmLib Context: Reference to ::GmmLibContext
+/// @param[in]  CreateParams: Flags which specify what sort of resource to create
+///
+/// @return     ::GMM_STATUS
+/////////////////////////////////////////////////////////////////////////////////////
+GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::CreateCustomRes_2(Context &GmmLibContext, GMM_RESCREATE_CUSTOM_PARAMS_2 &CreateParams)
+{
+    const GMM_PLATFORM_INFO *pPlatform;
+    GMM_STATUS               Status       = GMM_ERROR;
+    GMM_TEXTURE_CALC *       pTextureCalc = NULL;
+    uint32_t                 BitsPerPixel, i;
+
+
+    GMM_DPF_ENTER;
+
+    GET_GMM_CLIENT_TYPE(pClientContext, ClientType);
+    pGmmUmdLibContext = reinterpret_cast<uint64_t>(&GmmLibContext);
+    __GMM_ASSERTPTR(pGmmUmdLibContext, GMM_ERROR);
+
+
+    if((CreateParams.Format > GMM_FORMAT_INVALID) &&
+       (CreateParams.Format < GMM_RESOURCE_FORMATS))
+    {
+        BitsPerPixel = GetGmmLibContext()->GetPlatformInfo().FormatTable[CreateParams.Format].Element.BitsPer;
+    }
+    else
+    {
+        GMM_ASSERTDPF(0, "Format Error");
+        Status = GMM_INVALIDPARAM;
+        goto ERROR_CASE;
+    }
+
+    pPlatform    = GMM_OVERRIDE_PLATFORM_INFO(&Surf, GetGmmLibContext());
+    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
+
+    Surf.Type                    = CreateParams.Type;
+    Surf.Format                  = CreateParams.Format;
+    Surf.BaseWidth               = CreateParams.BaseWidth64;
+    Surf.BaseHeight              = CreateParams.BaseHeight;
+    Surf.Flags                   = CreateParams.Flags;
+    Surf.CachePolicy.Usage       = CreateParams.Usage;
+    Surf.Pitch                   = CreateParams.Pitch;
+    Surf.Size                    = CreateParams.Size;
+    Surf.Alignment.BaseAlignment = CreateParams.BaseAlignment;
+    Surf.MaxLod                  = 1;
+    Surf.ArraySize               = 1;
+    Surf.CpTag                   = CreateParams.CpTag;
+
+#if(_DEBUG || _RELEASE_INTERNAL)
+    Surf.Platform = GetGmmLibContext()->GetPlatformInfo().Platform;
+#endif
+    Surf.BitsPerPixel     = BitsPerPixel;
+    Surf.Alignment.QPitch = (GMM_GLOBAL_GFX_SIZE_T)(Surf.Pitch * Surf.BaseHeight);
+
+    pTextureCalc->SetTileMode(&Surf);
+
+    if(GmmIsPlanar(Surf.Format))
+    {
+        if(GMM_IS_TILED(pPlatform->TileInfo[Surf.TileMode]))
+        {
+            Surf.OffsetInfo.Plane.IsTileAlignedPlanes = true;
+        }
+        for(i = 1; i <= CreateParams.NoOfPlanes; i++)
+        {
+            Surf.OffsetInfo.Plane.X[i] = CreateParams.PlaneOffset.X[i];
+            Surf.OffsetInfo.Plane.Y[i] = CreateParams.PlaneOffset.Y[i];
+        }
+        Surf.OffsetInfo.Plane.NoOfPlanes = CreateParams.NoOfPlanes;
+
+        if(Surf.ArraySize > 1)
+        {
+            //Not required as this new interface doesn't support arrayed surfaces.
+        }
+
+        UpdateUnAlignedParams();
+    }
+
+    switch(Surf.Type)
+    {
+        case RESOURCE_1D:
+        case RESOURCE_2D:
+        case RESOURCE_PRIMARY:
+        case RESOURCE_SHADOW:
+        case RESOURCE_STAGING:
+        case RESOURCE_GDI:
+        case RESOURCE_NNDI:
+        case RESOURCE_HARDWARE_MBM:
+        case RESOURCE_OVERLAY_INTERMEDIATE_SURFACE:
+        case RESOURCE_IFFS_MAPTOGTT:
+#if _WIN32
+        case RESOURCE_WGBOX_ENCODE_DISPLAY:
+        case RESOURCE_WGBOX_ENCODE_REFERENCE:
+#endif
+        {
+            if(Surf.ArraySize > 1)
+            {
+                //Not required as this new interface doesn't support arrayed surfaces.
+            }
+
+            for(i = 0; i <= Surf.MaxLod; i++)
+            {
+                Surf.OffsetInfo.Texture2DOffsetInfo.Offset[i] = 0;
+            }
+
+            break;
+        }
+        default:
+        {
+            GMM_ASSERTDPF(0, "GmmTexAlloc: Unknown surface type!");
+            Status = GMM_INVALIDPARAM;
+            goto ERROR_CASE;
+            ;
+        }
+    };
+
+    if(Surf.Flags.Gpu.UnifiedAuxSurface || Surf.Flags.Gpu.CCS)
+    {
+
+        if(GetGmmLibContext()->GetSkuTable().FtrLinearCCS)
+        {
+            AuxSurf.Flags.Gpu.__NonMsaaLinearCCS = 1;
+        }
+
+        AuxSurf.Flags.Info.TiledW  = 0;
+        AuxSurf.Flags.Info.TiledYf = 0;
+        AuxSurf.Flags.Info.TiledX  = 0;
+        AuxSurf.Flags.Info.Linear  = 1;
+        GMM_SET_64KB_TILE(AuxSurf.Flags, 0, GetGmmLibContext());
+        GMM_SET_4KB_TILE(AuxSurf.Flags, 0, GetGmmLibContext());
+
+        AuxSurf.ArraySize    = 1;
+        AuxSurf.BitsPerPixel = 8;
+
+        if(GmmIsPlanar(CreateParams.Format) || GmmIsUVPacked(CreateParams.Format))
+        {
+            AuxSurf.OffsetInfo.Plane.X[GMM_PLANE_Y] = CreateParams.AuxSurf.PlaneOffset.X[GMM_PLANE_Y];
+            AuxSurf.OffsetInfo.Plane.Y[GMM_PLANE_Y] = CreateParams.AuxSurf.PlaneOffset.Y[GMM_PLANE_Y];
+            AuxSurf.OffsetInfo.Plane.X[GMM_PLANE_U] = CreateParams.AuxSurf.PlaneOffset.X[GMM_PLANE_U];
+            AuxSurf.OffsetInfo.Plane.Y[GMM_PLANE_U] = CreateParams.AuxSurf.PlaneOffset.Y[GMM_PLANE_U];
+            AuxSurf.OffsetInfo.Plane.X[GMM_PLANE_V] = CreateParams.AuxSurf.PlaneOffset.X[GMM_PLANE_V];
+            AuxSurf.OffsetInfo.Plane.Y[GMM_PLANE_V] = CreateParams.AuxSurf.PlaneOffset.Y[GMM_PLANE_V];
+            AuxSurf.OffsetInfo.Plane.ArrayQPitch    = CreateParams.AuxSurf.Size;
+        }
+
+        AuxSurf.Size = CreateParams.AuxSurf.Size;
+
+        AuxSurf.Pitch     = CreateParams.AuxSurf.Pitch;
+        AuxSurf.Type      = RESOURCE_BUFFER;
+        AuxSurf.Alignment = {0};
+
+        AuxSurf.Alignment.QPitch        = GFX_ULONG_CAST(AuxSurf.Size);
+        AuxSurf.Alignment.BaseAlignment = CreateParams.AuxSurf.BaseAlignment; //TODO: TiledResource?
+        AuxSurf.Size                    = GFX_ALIGN(AuxSurf.Size, PAGE_SIZE); //page-align final size
+
+        if(AuxSurf.Flags.Gpu.TiledResource)
+        {
+            AuxSurf.Alignment.BaseAlignment = GMM_KBYTE(64);                          //TODO: TiledResource?
+            AuxSurf.Size                    = GFX_ALIGN(AuxSurf.Size, GMM_KBYTE(64)); //page-align final size
+        }
+
+        //Clear compression request in CCS
+        AuxSurf.Flags.Info.RenderCompressed = 0;
+        AuxSurf.Flags.Info.MediaCompressed  = 0;
+        AuxSurf.Flags.Info.RedecribedPlanes = 0;
+        pTextureCalc->SetTileMode(&AuxSurf);
+        AuxSurf.UnpaddedSize = AuxSurf.Size;
+    }
+    GMM_DPF_EXIT;
+    return GMM_SUCCESS;
+
+ERROR_CASE:
+    //Zero out all the members
+    new(this) GmmResourceInfoCommon();
+
+    GMM_DPF_EXIT;
+    return Status;
+}
+#endif
+
 /////////////////////////////////////////////////////////////////////////////////////
 /// Allows clients to "create" any type of resource. This function does not
 /// allocate any memory for the resource. It just calculates the various parameters
@@ -248,7 +441,9 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::Create(Context &GmmLibCont
 
     GMM_DPF_ENTER;
 
-    __GMM_ASSERTPTR(pGmmGlobalContext, GMM_ERROR);
+    GET_GMM_CLIENT_TYPE(pClientContext, ClientType);
+    pGmmUmdLibContext = reinterpret_cast<uint64_t>(&GmmLibContext);
+    __GMM_ASSERTPTR(pGmmUmdLibContext, GMM_ERROR);
 
     if(CreateParams.Flags.Info.ExistingSysMem &&
        (CreateParams.Flags.Info.TiledW ||
@@ -261,30 +456,14 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::Create(Context &GmmLibCont
         goto ERROR_CASE;
     }
 
-    pGmmLibContext = reinterpret_cast<uint64_t>(&GmmLibContext);
-
-#if(!defined(__GMM_KMD__) && !defined(GMM_UNIFIED_LIB))
-    // Client ULT does new on ResInfo without calling GmmInitGlobalContext. If they call create later, on the previously created
-    // ResInfo object set the clientContext for them, since clientContext wouldnt have been set
-    if(!pClientContext)
-    {
-        pClientContext = pGmmGlobalContext->pGmmGlobalClientContext;
-        GET_GMM_CLIENT_TYPE(pClientContext, ClientType);
-    }
-#endif
-
-#if defined(__GMM_KMD__)
-    ClientType = GMM_KMD_VISTA;
-#endif
-
     if(!CopyClientParams(CreateParams))
     {
         Status = GMM_INVALIDPARAM;
         goto ERROR_CASE;
     }
 
-    pPlatform    = GMM_OVERRIDE_PLATFORM_INFO(&Surf);
-    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf);
+    pPlatform    = GMM_OVERRIDE_PLATFORM_INFO(&Surf, GetGmmLibContext());
+    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
 
 #if defined(__GMM_KMD__) || !defined(_WIN32)
     if(!CreateParams.Flags.Info.ExistingSysMem)
@@ -305,16 +484,6 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::Create(Context &GmmLibCont
         {
             GMM_ASSERTDPF(0, "GmmTexAlloc failed!");
             goto ERROR_CASE;
-        }
-
-        // Fill out the texture info for each plane if they require rediscription
-        if(Surf.Flags.Info.RedecribedPlanes)
-        {
-            if(false == RedescribePlanes())
-            {
-                GMM_ASSERTDPF(0, "Redescribe planes failed!");
-                goto ERROR_CASE;
-            }
         }
 
         if(Surf.Flags.Gpu.UnifiedAuxSurface)
@@ -339,6 +508,11 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::Create(Context &GmmLibCont
             if(Surf.Flags.Gpu.IndirectClearColor ||
                Surf.Flags.Gpu.ColorDiscard)
             {
+                if(GetGmmLibContext()->GetSkuTable().FtrFlatPhysCCS && AuxSurf.Type == RESOURCE_INVALID)
+                {
+                    //ie only AuxType is CCS, doesn't exist with FlatCCS, enable it for CC
+                    AuxSurf.Type = Surf.Type;
+                }
                 if(!Surf.Flags.Gpu.TiledResource)
                 {
                     AuxSurf.CCSize = PAGE_SIZE; // 128bit Float Value + 32bit RT Native Value + Padding.
@@ -349,6 +523,12 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::Create(Context &GmmLibCont
                     AuxSurf.CCSize = GMM_KBYTE(64); // 128bit Float Value + 32bit RT Native Value + Padding.
                     AuxSurf.Size += GMM_KBYTE(64);
                 }
+            }
+	    
+	    if(Surf.Flags.Gpu.ProceduralTexture)
+            {
+                //Do not require main surface access either in GPUVA/physical space.
+                Surf.Size = 0;
             }
 
             TotalSize = Surf.Size + AuxSurf.Size; //Not including AuxSecSurf size, multi-Aux surface isn't supported for displayables
@@ -465,7 +645,7 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::Create(Context &GmmLibCont
         }
     }
 
-    if(Is64KBPageSuitable() && pGmmGlobalContext->GetSkuTable().FtrLocalMemory)
+    if(Is64KBPageSuitable() && GetGmmLibContext()->GetSkuTable().FtrLocalMemory)
     {
         // BaseAlignment can be greater than 64KB and needs to be aligned to 64KB
         Surf.Alignment.BaseAlignment = GFX_MAX(GFX_ALIGN(Surf.Alignment.BaseAlignment, GMM_KBYTE(64)), GMM_KBYTE(64));
@@ -702,140 +882,6 @@ void GmmLib::GmmResourceInfoCommon::UpdateUnAlignedParams()
     __GMM_ASSERTPTR(((Surf.OffsetInfo.Plane.Y[GMM_PLANE_U] == YHeight) && (UmdUHeight == VHeight)), VOIDRETURN);
 }
 /////////////////////////////////////////////////////////////////////////////////////
-/// This function calculates number of planes required for the given input format
-/// and allocates texture info for the respective planes.
-///
-/// @return     ::bool
-/////////////////////////////////////////////////////////////////////////////////////
-bool GmmLib::GmmResourceInfoCommon::RedescribePlanes()
-{
-    const GMM_PLATFORM_INFO *pPlatform;
-    GMM_TEXTURE_CALC *       pTextureCalc = NULL;
-    GMM_STATUS               Status       = GMM_SUCCESS;
-    int                      MaxPlanes    = 1;
-
-    pPlatform    = GMM_OVERRIDE_PLATFORM_INFO(&Surf);
-    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf);
-
-    __GMM_ASSERT(Surf.Flags.Info.RedecribedPlanes);
-
-    GMM_TEXTURE_INFO *pYPlane = &PlaneSurf[GMM_PLANE_Y];
-    GMM_TEXTURE_INFO *pUPlane = &PlaneSurf[GMM_PLANE_U];
-    GMM_TEXTURE_INFO *pVPlane = &PlaneSurf[GMM_PLANE_V];
-
-    pYPlane->Type         = Surf.Type;
-    pYPlane->BaseWidth    = Surf.BaseWidth;
-    pYPlane->BaseHeight   = Surf.BaseHeight;
-    pYPlane->Depth        = Surf.Depth;
-    pYPlane->ArraySize    = Surf.ArraySize;
-    pYPlane->MSAA         = Surf.MSAA;
-    pYPlane->Flags        = Surf.Flags;
-    pYPlane->BitsPerPixel = Surf.BitsPerPixel;
-
-#if(_DEBUG || _RELEASE_INTERNAL)
-    pYPlane->Platform = Surf.Platform;
-#endif
-
-    pYPlane->Flags.Info.RedecribedPlanes = false;
-
-    *pUPlane = *pVPlane = *pYPlane;
-
-    if(GmmIsUVPacked(Surf.Format))
-    {
-        // UV packed resources must have two seperate
-        // tiling modes per plane, due to the packed
-        // UV plane having twice the bits per pixel
-        // as the Y plane.
-
-        if(Surf.BitsPerPixel == 8)
-        {
-            pYPlane->BitsPerPixel = 8;
-            pYPlane->Format       = GMM_FORMAT_R8_UINT;
-
-            pUPlane->BitsPerPixel = 16;
-            pUPlane->Format       = GMM_FORMAT_R16_UINT;
-        }
-        else if(Surf.BitsPerPixel == 16)
-        {
-            pYPlane->BitsPerPixel = 16;
-            pYPlane->Format       = GMM_FORMAT_R16_UINT;
-
-            pUPlane->BitsPerPixel = 32;
-            pUPlane->Format       = GMM_FORMAT_R32_UINT;
-        }
-        else
-        {
-            GMM_ASSERTDPF(0, "Unsupported format/pixel size combo!");
-            Status = GMM_INVALIDPARAM;
-            goto ERROR_CASE;
-        }
-
-        pUPlane->BaseHeight = GFX_CEIL_DIV(pYPlane->BaseHeight, 2);
-        pUPlane->BaseWidth  = GFX_CEIL_DIV(pYPlane->BaseWidth, 2);
-        MaxPlanes           = 2;
-    }
-    else
-    {
-        // Non-UV packed surfaces only require the plane descriptors
-        // have proper height and width for each plane
-        switch(Surf.Format)
-        {
-            case GMM_FORMAT_IMC1:
-            case GMM_FORMAT_IMC2:
-            case GMM_FORMAT_IMC3:
-            case GMM_FORMAT_IMC4:
-            case GMM_FORMAT_MFX_JPEG_YUV420:
-            {
-                pUPlane->BaseWidth = pVPlane->BaseWidth = GFX_CEIL_DIV(pYPlane->BaseWidth, 2);
-            }
-            case GMM_FORMAT_MFX_JPEG_YUV422V:
-            {
-                pUPlane->BaseHeight = pVPlane->BaseHeight = GFX_CEIL_DIV(pYPlane->BaseHeight, 2);
-                break;
-            }
-            case GMM_FORMAT_MFX_JPEG_YUV411R_TYPE:
-            {
-                pUPlane->BaseHeight = pVPlane->BaseHeight = GFX_CEIL_DIV(pYPlane->BaseHeight, 4);
-                break;
-            }
-            case GMM_FORMAT_MFX_JPEG_YUV411:
-            {
-                pUPlane->BaseWidth = pVPlane->BaseWidth = GFX_CEIL_DIV(pYPlane->BaseWidth, 4);
-                break;
-            }
-            case GMM_FORMAT_MFX_JPEG_YUV422H:
-            {
-                pUPlane->BaseWidth = pVPlane->BaseWidth = GFX_CEIL_DIV(pYPlane->BaseWidth, 2);
-                break;
-            }
-            default:
-            {
-                break;
-            }
-        }
-
-        pYPlane->Format = pUPlane->Format = pVPlane->Format =
-        (pYPlane->BitsPerPixel == 8) ? GMM_FORMAT_R8_UINT : GMM_FORMAT_R16_UINT;
-        MaxPlanes = 3;
-    }
-
-    for(int i = GMM_PLANE_Y; i <= MaxPlanes; i++) // all 2 or 3 planes
-    {
-        if((GMM_SUCCESS != pTextureCalc->AllocateTexture(&PlaneSurf[i])))
-        {
-            GMM_ASSERTDPF(false, "GmmTexAlloc failed!");
-            Status = GMM_ERROR;
-            goto ERROR_CASE;
-        }
-    }
-
-    Status = static_cast<GMM_STATUS>(false == ReAdjustPlaneProperties(false));
-
-ERROR_CASE:
-    return (Status == GMM_SUCCESS) ? true : false;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////
 /// Returns downscaled width for fast clear of given subresource
 /// @param[in]  uint32_t : MipLevel
 /// @return     Width
@@ -847,7 +893,7 @@ uint64_t GmmLib::GmmResourceInfoCommon::GetFastClearWidth(uint32_t MipLevel)
     uint32_t numSamples = GetNumSamples();
 
     GMM_TEXTURE_CALC *pTextureCalc;
-    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf);
+    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
 
     if(numSamples == 1)
     {
@@ -882,7 +928,7 @@ uint32_t GmmLib::GmmResourceInfoCommon::GetFastClearHeight(uint32_t MipLevel)
     uint32_t numSamples = GetNumSamples();
 
     GMM_TEXTURE_CALC *pTextureCalc;
-    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf);
+    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
 
     if(numSamples == 1)
     {
@@ -896,74 +942,6 @@ uint32_t GmmLib::GmmResourceInfoCommon::GetFastClearHeight(uint32_t MipLevel)
     return height;
 }
 
-
-/////////////////////////////////////////////////////////////////////////////////////
-/// This function readjustes Plane properties. Valid for MainSurf not for AuxSurf
-///
-/// @param[in]  bool: Whether Surf is Aux
-///
-/// @return     ::bool
-/////////////////////////////////////////////////////////////////////////////////////
-bool GmmLib::GmmResourceInfoCommon::ReAdjustPlaneProperties(bool IsAuxSurf)
-{
-    const GMM_PLATFORM_INFO *pPlatform     = GMM_OVERRIDE_PLATFORM_INFO(&Surf);
-    GMM_TEXTURE_INFO *       pTexInfo      = &Surf;
-    GMM_TEXTURE_INFO *       pPlaneTexInfo = PlaneSurf;
-
-    if(IsAuxSurf)
-    {
-        //AuxSurf isn't redescribed
-        return false;
-    }
-
-    if(GmmIsUVPacked(pTexInfo->Format))
-    {
-        pPlaneTexInfo[GMM_PLANE_V] = pPlaneTexInfo[GMM_PLANE_U];
-
-        // Need to adjust the returned surfaces and then copy
-        // the relivent data into the parent descriptor.
-        // UV plane is wider while Y plane is taller,
-        // so adjust pitch and sizes to fit accordingly
-        pTexInfo->Alignment        = pPlaneTexInfo[GMM_PLANE_U].Alignment;
-        pTexInfo->Alignment.VAlign = pPlaneTexInfo[GMM_PLANE_Y].Alignment.VAlign;
-
-        if(pPlaneTexInfo[GMM_PLANE_Y].Pitch != pPlaneTexInfo[GMM_PLANE_U].Pitch)
-        {
-            pPlaneTexInfo[GMM_PLANE_Y].Size = (pPlaneTexInfo[GMM_PLANE_Y].Size / pPlaneTexInfo[GMM_PLANE_Y].Pitch) * pPlaneTexInfo[GMM_PLANE_U].Pitch;
-            __GMM_ASSERT(GFX_IS_ALIGNED(pPlaneTexInfo[GMM_PLANE_Y].Size, pPlatform->TileInfo[pPlaneTexInfo[GMM_PLANE_Y].TileMode].LogicalSize));
-
-            if(pPlaneTexInfo[GMM_PLANE_Y].ArraySize > 1)
-            {
-                pPlaneTexInfo[GMM_PLANE_Y].OffsetInfo.Texture2DOffsetInfo.ArrayQPitchRender =
-                pPlaneTexInfo[GMM_PLANE_Y].OffsetInfo.Texture2DOffsetInfo.ArrayQPitchLock =
-                pPlaneTexInfo[GMM_PLANE_Y].Size / pPlaneTexInfo[GMM_PLANE_Y].ArraySize;
-            }
-
-            pTexInfo->Pitch = pPlaneTexInfo[GMM_PLANE_Y].Pitch = pPlaneTexInfo[GMM_PLANE_U].Pitch;
-        }
-
-        pTexInfo->OffsetInfo.Plane.ArrayQPitch =
-        pPlaneTexInfo[GMM_PLANE_Y].OffsetInfo.Texture2DOffsetInfo.ArrayQPitchRender +
-        pPlaneTexInfo[GMM_PLANE_U].OffsetInfo.Texture2DOffsetInfo.ArrayQPitchRender;
-
-        pTexInfo->Size = pPlaneTexInfo[GMM_PLANE_Y].Size + pPlaneTexInfo[GMM_PLANE_U].Size;
-
-        if(pTexInfo->Size > (GMM_GFX_SIZE_T)(pPlatform->SurfaceMaxSize))
-        {
-            GMM_ASSERTDPF(0, "Surface too large!");
-            return false;
-        }
-    }
-    else
-    {
-        // The parent resource should be the same size as all of the child planes
-        __GMM_ASSERT(pTexInfo->Size == (pPlaneTexInfo[GMM_PLANE_Y].Size +
-                                        pPlaneTexInfo[GMM_PLANE_U].Size + pPlaneTexInfo[GMM_PLANE_U].Size));
-    }
-
-    return true;
-}
-
 /////////////////////////////////////////////////////////////////////////////////////
 /// Returns the Platform info.  If Platform has been overriden by the clients, then
 /// it returns the overriden Platform Info struct.
@@ -972,16 +950,16 @@ bool GmmLib::GmmResourceInfoCommon::ReAdjustPlaneProperties(bool IsAuxSurf)
 const GMM_PLATFORM_INFO &GmmLib::GmmResourceInfoCommon::GetPlatformInfo()
 {
 #if(defined(__GMM_KMD__) && (_DEBUG || _RELEASE_INTERNAL))
-    if(GFX_GET_CURRENT_RENDERCORE(Surf.Platform) != GFX_GET_CURRENT_RENDERCORE(((Context *)pGmmLibContext)->GetPlatformInfo().Platform))
+    if(GFX_GET_CURRENT_RENDERCORE(Surf.Platform) != GFX_GET_CURRENT_RENDERCORE(((Context *)pGmmKmdLibContext)->GetPlatformInfo().Platform))
     {
-        return ((Context *)pGmmLibContext)->GetOverridePlatformInfo();
+        return ((Context *)pGmmKmdLibContext)->GetOverridePlatformInfo();
     }
     else
     {
-        return ((Context *)pGmmLibContext)->GetPlatformInfo();
+        return ((Context *)pGmmKmdLibContext)->GetPlatformInfo();
     }
 #else
-    return ((Context *)pGmmLibContext)->GetPlatformInfo();
+    return ((Context *)pGmmUmdLibContext)->GetPlatformInfo();
 #endif
 }
 
@@ -1001,7 +979,7 @@ uint32_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetPaddedWidth(uint32_t MipL
 
     __GMM_ASSERT(MipLevel <= Surf.MaxLod);
 
-    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf);
+    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
 
     // This shall be called for Depth and Separate Stencil main surface resource
     // This shall be called for the Aux surfaces (MCS, CCS and Hiz) too.
@@ -1086,7 +1064,7 @@ uint32_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetPaddedHeight(uint32_t Mip
                  AuxSurf.Flags.Gpu.__MsaaTileMcs ||
                  AuxSurf.Flags.Gpu.CCS || AuxSurf.Flags.Gpu.__NonMsaaTileYCcs);
 
-    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf);
+    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
 
     MipHeight = pTextureCalc->GmmTexGetMipHeight(&Surf, MipLevel);
 
@@ -1176,7 +1154,7 @@ uint32_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetQPitch()
     const GMM_PLATFORM_INFO *pPlatform;
     uint32_t                 QPitch;
 
-    pPlatform = GMM_OVERRIDE_PLATFORM_INFO(&Surf);
+    pPlatform = GMM_OVERRIDE_PLATFORM_INFO(&Surf, GetGmmLibContext());
 
     __GMM_ASSERT(GFX_GET_CURRENT_RENDERCORE(pPlatform->Platform) >= IGFX_GEN8_CORE);
     __GMM_ASSERT((Surf.Type != RESOURCE_3D) ||
@@ -1189,7 +1167,7 @@ uint32_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetQPitch()
     // Stencil    ==> logical, i.e. not halved
 
     if((GFX_GET_CURRENT_RENDERCORE(pPlatform->Platform) >= IGFX_GEN9_CORE) &&
-       GmmIsCompressed(Surf.Format))
+       GmmIsCompressed(GetGmmLibContext(), Surf.Format))
     {
         QPitch = Surf.Alignment.QPitch / GetCompressionBlockHeight();
 
@@ -1221,6 +1199,12 @@ uint32_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetQPitch()
 /////////////////////////////////////////////////////////////////////////////////////
 GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetOffset(GMM_REQ_OFFSET_INFO &ReqInfo)
 {
+    GMM_TEXTURE_CALC *pTextureCalc;
+
+    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
+
+    __GMM_ASSERT((pTextureCalc != NULL));
+
     if(Surf.Flags.Info.RedecribedPlanes)
     {
         uint8_t RestoreReqStdLayout = ReqInfo.ReqStdLayout ? 1 : 0;
@@ -1229,13 +1213,14 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetOffset(GMM_REQ_OFFSET_I
         if(ReqInfo.ReqLock || ReqInfo.ReqRender)
         {
             ReqInfo.ReqStdLayout = 0;
-            GmmTexGetMipMapOffset(&Surf, &ReqInfo);
+            GmmTexGetMipMapOffset(&Surf, &ReqInfo, GetGmmLibContext());
             ReqInfo.ReqStdLayout = RestoreReqStdLayout;
         }
 
         if(ReqInfo.ReqStdLayout)
         {
             GMM_REQ_OFFSET_INFO TempReqInfo[GMM_MAX_PLANE] = {0};
+	    GMM_TEXTURE_INFO    TexInfo[GMM_MAX_PLANE];
             uint32_t            Plane, TotalPlanes = GmmLib::Utility::GmmGetNumPlanes(Surf.Format);
 
             // Caller must specify which plane they need the offset into if not
@@ -1252,12 +1237,16 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetOffset(GMM_REQ_OFFSET_I
             TempReqInfo[GMM_PLANE_Y].ReqLock = TempReqInfo[GMM_PLANE_Y].ReqRender = 0;
 
             TempReqInfo[GMM_PLANE_V] = TempReqInfo[GMM_PLANE_U] = TempReqInfo[GMM_PLANE_Y];
+            
+	    pTextureCalc->GetRedescribedPlaneParams(&Surf, GMM_PLANE_Y, &TexInfo[GMM_PLANE_Y]);
+            pTextureCalc->GetRedescribedPlaneParams(&Surf, GMM_PLANE_U, &TexInfo[GMM_PLANE_U]);
+            pTextureCalc->GetRedescribedPlaneParams(&Surf, GMM_PLANE_V, &TexInfo[GMM_PLANE_V]);
 
-            if(GMM_SUCCESS != GmmTexGetMipMapOffset(&PlaneSurf[GMM_PLANE_Y], &TempReqInfo[GMM_PLANE_Y]) ||
-               GMM_SUCCESS != GmmTexGetMipMapOffset(&PlaneSurf[GMM_PLANE_U], &TempReqInfo[GMM_PLANE_U]) ||
-               GMM_SUCCESS != GmmTexGetMipMapOffset(&PlaneSurf[GMM_PLANE_V], &TempReqInfo[GMM_PLANE_V]))
-            {
-                __GMM_ASSERT(0);
+            if(GMM_SUCCESS != GmmTexGetMipMapOffset(&TexInfo[GMM_PLANE_Y], &TempReqInfo[GMM_PLANE_Y], GetGmmLibContext()) ||
+               GMM_SUCCESS != GmmTexGetMipMapOffset(&TexInfo[GMM_PLANE_U], &TempReqInfo[GMM_PLANE_U], GetGmmLibContext()) ||
+               GMM_SUCCESS != GmmTexGetMipMapOffset(&TexInfo[GMM_PLANE_V], &TempReqInfo[GMM_PLANE_V], GetGmmLibContext()))
+	    {
+    		    __GMM_ASSERT(0);
                 return GMM_ERROR;
             }
 
@@ -1285,9 +1274,10 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetOffset(GMM_REQ_OFFSET_I
                 {
                     // Find the size of the previous planes and add it to the offset
                     TempReqInfo[Plane].StdLayout.Offset = -1;
-
-                    if(GMM_SUCCESS != GmmTexGetMipMapOffset(&PlaneSurf[Plane], &TempReqInfo[Plane]))
+                
+                    if(GMM_SUCCESS != GmmTexGetMipMapOffset(&TexInfo[Plane], &TempReqInfo[Plane], GetGmmLibContext()))
                     {
+                 
                         __GMM_ASSERT(0);
                         return GMM_ERROR;
                     }
@@ -1301,7 +1291,7 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetOffset(GMM_REQ_OFFSET_I
     }
     else
     {
-        return GmmTexGetMipMapOffset(&Surf, &ReqInfo);
+        return GmmTexGetMipMapOffset(&Surf, &ReqInfo, GetGmmLibContext());
     }
 }
 
@@ -1326,11 +1316,12 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::CpuBlt(GMM_RES_COPY_BLT *pBlt
     uint8_t                  Success = 1;
     GMM_TEXTURE_INFO *       pTexInfo;
     GMM_TEXTURE_CALC *       pTextureCalc;
+    GMM_TEXTURE_INFO         RedescribedPlaneInfo;
 
     __GMM_ASSERTPTR(pBlt, 0);
 
-    pPlatform    = GMM_OVERRIDE_PLATFORM_INFO(&Surf);
-    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf);
+    pPlatform    = GMM_OVERRIDE_PLATFORM_INFO(&Surf, GetGmmLibContext());
+    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
 
     __GMM_ASSERT(
     Surf.Type == RESOURCE_1D ||
@@ -1458,13 +1449,15 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::CpuBlt(GMM_RES_COPY_BLT *pBlt
 
         if(pBlt->Gpu.OffsetY < pTexInfo->OffsetInfo.Plane.Y[GMM_PLANE_U])
         {
+	    pTextureCalc->GetRedescribedPlaneParams(pTexInfo, GMM_PLANE_Y, &RedescribedPlaneInfo);
             // Y Plane
-            pTexInfo = &(PlaneSurf[GMM_PLANE_Y]);
+            pTexInfo = &RedescribedPlaneInfo;
         }
         else
         {
             // UV Plane
-            pTexInfo = &(PlaneSurf[GMM_PLANE_U]);
+	    pTextureCalc->GetRedescribedPlaneParams(pTexInfo, GMM_PLANE_U, &RedescribedPlaneInfo);
+            pTexInfo = &RedescribedPlaneInfo;
         }
     }
 
@@ -1718,16 +1711,19 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::CpuBlt(GMM_RES_COPY_BLT *pBlt
                 __GMM_ASSERT((SwizzledSurface.Pitch % 2) == 0);
                 SwizzledSurface.Pitch /= 2;
                 SwizzledSurface.Height *= 2;
-
-                __GMM_ASSERT((GetOffset.Render.XOffset % 2) == 0);
-                SwizzledSurface.OffsetX = GetOffset.Render.XOffset / 2 + __OffsetXBytes;
-                SwizzledSurface.OffsetY = GetOffset.Render.YOffset * 2 + __OffsetY;
             }
             else if(GMM_IS_4KB_TILE(pTexInfo->Flags) &&
                     !(pTexInfo->Flags.Info.TiledYf ||
                       GMM_IS_64KB_TILE(pTexInfo->Flags)))
             {
-                SwizzledSurface.pSwizzle = &INTEL_TILE_Y;
+                if(GetGmmLibContext()->GetSkuTable().FtrTileY)
+                 {
+                    SwizzledSurface.pSwizzle = &INTEL_TILE_Y;
+                }
+                else
+                {
+                    SwizzledSurface.pSwizzle = &INTEL_TILE_4;
+                }
             }
             else if(pTexInfo->Flags.Info.TiledX)
             {
@@ -1753,7 +1749,7 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::CpuBlt(GMM_RES_COPY_BLT *pBlt
                         CASE(Layout, Tile, msaa, xD, 128);    \
                     }
 
-                #define SWITCH_MSAA_INTEL(Layout, Tile, xD)     \
+                #define SWITCH_MSAA_TILE64(Layout, Tile, xD)     \
                 {\
                     switch(pTexInfo->MSAA.NumSamples)           \
                     {                                           \
@@ -1769,7 +1765,7 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::CpuBlt(GMM_RES_COPY_BLT *pBlt
                         case 4:                                 \
                         case 8:                                 \
                         case 16:                                \
-                            SWITCH_BPP(Layout, Tile, MSAA4_, xD);  \
+                            SWITCH_BPP(Layout, Tile, MSAA_, xD);  \
                             break;                              \
                     }\
                 }
@@ -1804,13 +1800,17 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::CpuBlt(GMM_RES_COPY_BLT *pBlt
                 {
                     if(pTexInfo->Flags.Info.TiledYf)
                     {
-                        SWITCH_BPP(INTEL, TILEYF, , 3D_);
+                        SWITCH_BPP(INTEL, TILE_YF, , 3D_);
                     }
                     else if(GMM_IS_64KB_TILE(pTexInfo->Flags))
                     {
-                        if(pGmmGlobalContext->GetSkuTable().FtrTileY)
+                        if(GetGmmLibContext()->GetSkuTable().FtrTileY)
                         {
-                            SWITCH_BPP(INTEL, TILEYS, , 3D_);
+                            SWITCH_BPP(INTEL, TILE_YS, , 3D_);
+                        }
+                        else
+                        {
+                            SWITCH_BPP(INTEL, TILE_64, , 3D_);
                         }
                     }
                 }
@@ -1818,13 +1818,17 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::CpuBlt(GMM_RES_COPY_BLT *pBlt
                 {
                     if(pTexInfo->Flags.Info.TiledYf)
                     {
-                        SWITCH_MSAA(INTEL, TILEYF, );
+                        SWITCH_MSAA(INTEL, TILE_YF, );
                     }
                     else if(GMM_IS_64KB_TILE(pTexInfo->Flags))
                     {
-                        if(pGmmGlobalContext->GetSkuTable().FtrTileY)
+                        if(GetGmmLibContext()->GetSkuTable().FtrTileY)
                         {
-                            SWITCH_MSAA(INTEL, TILEYS, );
+                            SWITCH_MSAA(INTEL, TILE_YS, );
+                        }
+                        else
+                        {
+                            SWITCH_MSAA_TILE64(INTEL, TILE_64, );
                         }
                     }
                 }
@@ -1863,12 +1867,14 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetMappingSpanDesc(GMM_GET_MA
     uint8_t                  WasFinalSpan = 0;
     GMM_TEXTURE_INFO *       pTexInfo;
     GMM_TEXTURE_CALC *       pTextureCalc;
+    GMM_TEXTURE_INFO         RedescribedPlaneInfo;
 
     __GMM_ASSERT(Surf.Flags.Info.StdSwizzle);
 
-    pPlatform    = GMM_OVERRIDE_PLATFORM_INFO(&Surf);
-    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf);
+    pPlatform    = GMM_OVERRIDE_PLATFORM_INFO(&Surf, GetGmmLibContext());
+    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
 
+    __GMM_ASSERT(pTextureCalc != NULL);
     pTexInfo = &Surf;
 
     if(pMapping->Type == GMM_MAPPING_GEN9_YS_TO_STDSWIZZLE)
@@ -1927,7 +1933,9 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetMappingSpanDesc(GMM_GET_MA
                 pMapping->__NextSpan.VirtualOffset  = ReqInfo.Render.Offset64;
             }
 
-            pTexInfo = &PlaneSurf[pMapping->Scratch.Plane];
+	    pTextureCalc->GetRedescribedPlaneParams(pTexInfo, GMM_PLANE_Y, &RedescribedPlaneInfo);
+            pTexInfo = &RedescribedPlaneInfo;
+
         }
 
         // Initialization of Mapping Params...
@@ -2203,7 +2211,7 @@ uint32_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetPackedMipTailStartLod()
 {
     uint32_t NumPackedMips = 0, NumTilesForPackedMips = 0;
 
-    const GMM_PLATFORM_INFO *pPlatform = GMM_OVERRIDE_PLATFORM_INFO(&Surf);
+    const GMM_PLATFORM_INFO *pPlatform = GMM_OVERRIDE_PLATFORM_INFO(&Surf, GetGmmLibContext());
 
     GetTiledResourceMipPacking(&NumPackedMips,
                                &NumTilesForPackedMips);
@@ -2236,141 +2244,13 @@ bool GMM_STDCALL GmmLib::GmmResourceInfoCommon::IsMipRCCAligned(uint8_t &MisAlig
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
-/// Returns the resource's compressions block width
-/// @return    Compression block width
-/////////////////////////////////////////////////////////////////////////////////////
-uint32_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetCompressionBlockWidth()
-{
-    GMM_RESOURCE_FORMAT Format;
-    Format = Surf.Format;
-
-    __GMM_ASSERT((Format > GMM_FORMAT_INVALID) &&
-                 (Format < GMM_RESOURCE_FORMATS));
-
-    return pGmmGlobalContext->GetPlatformInfo().FormatTable[Format].Element.Width;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////
-/// Returns the resource's compressions block height
-/// @return    Compression block width
-/////////////////////////////////////////////////////////////////////////////////////
-uint32_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetCompressionBlockHeight()
-{
-    GMM_RESOURCE_FORMAT Format;
-    Format = Surf.Format;
-
-    __GMM_ASSERT((Format > GMM_FORMAT_INVALID) &&
-                 (Format < GMM_RESOURCE_FORMATS));
-
-    return pGmmGlobalContext->GetPlatformInfo().FormatTable[Format].Element.Height;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////
-/// Returns the resource's compressions block depth
-/// @return    Compression block width
-/////////////////////////////////////////////////////////////////////////////////////
-uint32_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetCompressionBlockDepth()
-{
-    GMM_RESOURCE_FORMAT Format;
-    Format = Surf.Format;
-
-    __GMM_ASSERT((Format > GMM_FORMAT_INVALID) &&
-                 (Format < GMM_RESOURCE_FORMATS));
-
-    return pGmmGlobalContext->GetPlatformInfo().FormatTable[Format].Element.Depth;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////
-/// Returns whether resource uses LOD0-only or Full array spacing
-/// @return     1/0
-/////////////////////////////////////////////////////////////////////////////////////
-uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::IsArraySpacingSingleLod()
-{
-    __GMM_ASSERT(GFX_GET_CURRENT_RENDERCORE(pGmmGlobalContext->GetPlatformInfo().Platform) < IGFX_GEN8_CORE);
-    return Surf.Alignment.ArraySpacingSingleLod;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////
-/// Returns whether resource is ASTC
-/// @return     1/0
-/////////////////////////////////////////////////////////////////////////////////////
-uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::IsASTC()
-{
-    GMM_RESOURCE_FORMAT Format;
-    Format = Surf.Format;
-
-    return (Format > GMM_FORMAT_INVALID) &&
-           (Format < GMM_RESOURCE_FORMATS) &&
-           pGmmGlobalContext->GetPlatformInfo().FormatTable[Format].ASTC;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////
-/// Returns MOCS associated with the resource
-/// @param[in]     MOCS
-/////////////////////////////////////////////////////////////////////////////////////
-MEMORY_OBJECT_CONTROL_STATE GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetMOCS()
-{
-    const GMM_CACHE_POLICY_ELEMENT *CachePolicy = pGmmGlobalContext->GetCachePolicyUsage();
-
-    __GMM_ASSERT(CachePolicy[GetCachePolicyUsage()].Initialized);
-
-    // Prevent wrong Usage for XAdapter resources. UMD does not call GetMemoryObject on shader resources but,
-    // when they add it someone could call it without knowing the restriction.
-    if(Surf.Flags.Info.XAdapter &&
-       GetCachePolicyUsage() != GMM_RESOURCE_USAGE_XADAPTER_SHARED_RESOURCE)
-    {
-        __GMM_ASSERT(false);
-    }
-
-    if((CachePolicy[GetCachePolicyUsage()].Override & CachePolicy[GetCachePolicyUsage()].IDCode) ||
-       (CachePolicy[GetCachePolicyUsage()].Override == ALWAYS_OVERRIDE))
-    {
-        return CachePolicy[GetCachePolicyUsage()].MemoryObjectOverride;
-    }
-
-    return CachePolicy[GetCachePolicyUsage()].MemoryObjectNoOverride;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////
-/// Returns the surface state value for Standard Tiling Mode Extension
-/// @return     Standard Tiling Mode Extension
-/////////////////////////////////////////////////////////////////////////////////////
-uint32_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetStdTilingModeExtSurfaceState()
-{
-    const GMM_PLATFORM_INFO *pPlatform = GMM_OVERRIDE_PLATFORM_INFO(&Surf);
-    GMM_UNREFERENCED_LOCAL_VARIABLE(pPlatform); // Only used for debug
-    __GMM_ASSERT(GFX_GET_CURRENT_RENDERCORE(pPlatform->Platform) > IGFX_GEN10_CORE);
-
-    if(pGmmGlobalContext->GetSkuTable().FtrStandardMipTailFormat)
-    {
-        return 1;
-    }
-
-    return 0;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////
-/// Returns the surface state value for Resource Format
-/// @return     Resource Format
-/////////////////////////////////////////////////////////////////////////////////////
-GMM_SURFACESTATE_FORMAT GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetResourceFormatSurfaceState()
-{
-    GMM_RESOURCE_FORMAT Format;
-
-    Format = Surf.Format;
-    __GMM_ASSERT((Format > GMM_FORMAT_INVALID) && (Format < GMM_RESOURCE_FORMATS));
-
-    return pGmmGlobalContext->GetPlatformInfo().FormatTable[Format].SurfaceStateFormat;
-}
-
-/////////////////////////////////////////////////////////////////////////////////////
 /// Return the logical width of mip level
 /// @param[in] MipLevel: Mip level for which the info is needed
 /// @return    Mip width
 /////////////////////////////////////////////////////////////////////////////////////
 GMM_GFX_SIZE_T GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetMipWidth(uint32_t MipLevel)
 {
-    GMM_TEXTURE_CALC *pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf);
+    GMM_TEXTURE_CALC *pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
     return pTextureCalc->GmmTexGetMipWidth(&Surf, MipLevel);
 }
 
@@ -2381,7 +2261,7 @@ GMM_GFX_SIZE_T GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetMipWidth(uint32_t M
 /////////////////////////////////////////////////////////////////////////////////////
 uint32_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetMipHeight(uint32_t MipLevel)
 {
-    GMM_TEXTURE_CALC *pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf);
+    GMM_TEXTURE_CALC *pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
     return pTextureCalc->GmmTexGetMipHeight(&Surf, MipLevel);
 }
 
@@ -2392,6 +2272,6 @@ uint32_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetMipHeight(uint32_t MipLev
 /////////////////////////////////////////////////////////////////////////////////////
 uint32_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetMipDepth(uint32_t MipLevel)
 {
-    GMM_TEXTURE_CALC *pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf);
+    GMM_TEXTURE_CALC *pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
     return pTextureCalc->GmmTexGetMipDepth(&Surf, MipLevel);
 }

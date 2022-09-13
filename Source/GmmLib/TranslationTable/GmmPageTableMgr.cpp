@@ -43,7 +43,7 @@ Description: UMD-TT manager (manages both TR-TT and AUX-TT in user mode space)
     {                                    \
         LeaveCriticalSection(&PoolLock); \
     }
-
+extern GMM_MA_LIB_CONTEXT *pGmmMALibContext;
 #if defined(__linux__)
 GMM_STATUS GmmLib::__GmmDeviceAlloc(GmmClientContext *        pClientContext,
                                     GMM_DEVICE_CALLBACKS_INT *pDeviceCbInt,
@@ -78,7 +78,9 @@ GMM_STATUS GmmLib::__GmmDeviceAlloc(GmmClientContext *        pClientContext,
 
 GMM_STATUS GmmLib::__GmmDeviceDealloc(GMM_CLIENT                ClientType,
                                       GMM_DEVICE_CALLBACKS_INT *DeviceCb,
-                                      GMM_DEVICE_DEALLOC *      pDealloc)
+                                      GMM_DEVICE_DEALLOC *      pDealloc,
+                                      GmmClientContext *        pClientContext)
+
 {
     GMM_DDI_DEALLOCATE DeAlloc = {0};
     int                err     = 0;
@@ -217,7 +219,7 @@ void GmmLib::GmmPageTableMgr::__ReleaseUnusedPool(GMM_UMD_SYNCCONTEXT *UmdContex
             Dealloc.Priv   = Pool->GetGmmResInfo();
             Dealloc.hCsr   = hCsr;
 
-            Status = __GmmDeviceDealloc(ClientType, &DeviceCbInt, &Dealloc);
+            Status = __GmmDeviceDealloc(ClientType, &DeviceCbInt, &Dealloc, pClientContext);
 
             __GMM_ASSERT(GMM_SUCCESS == Status);
 
@@ -353,7 +355,8 @@ GmmLib::GmmPageTableMgr::GmmPageTableMgr(GMM_DEVICE_CALLBACKS_INT *DeviceCB, uin
         ptr->pClientContext = pClientContextIn;
         memcpy(&ptr->DeviceCbInt, DeviceCB, sizeof(GMM_DEVICE_CALLBACKS_INT));
 
-        if(pGmmGlobalContext->GetSkuTable().FtrE2ECompression)
+        if(pClientContextIn->GetSkuTable().FtrE2ECompression &&
+           !pClientContextIn->GetSkuTable().FtrFlatPhysCCS)
         {
             __GMM_ASSERT(TTFlags & AUXTT); //Aux-TT is mandatory
             ptr->AuxTTObj = new AuxTable();
@@ -412,7 +415,7 @@ ERROR_CASE:
 /////////////////////////////////////////////////////////////////////////////////////
 GMM_GFX_ADDRESS GmmLib::GmmPageTableMgr::GetAuxL3TableAddr()
 {
-    return AuxTTObj ? AuxTTObj->GetL3Address() : NULL;
+    return AuxTTObj ? AuxTTObj->GetL3Address() : 0ULL;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -428,14 +431,14 @@ GMM_STATUS GmmLib::GmmPageTableMgr::InitContextAuxTableRegister(HANDLE CmdQHandl
     GMM_UNREFERENCED_PARAMETER(engType);
 
     //Check FtrE2ECompression = 1
-    if(pGmmGlobalContext->GetSkuTable().FtrE2ECompression && AuxTTObj != NULL)
+    if(GetLibContext()->GetSkuTable().FtrE2ECompression && AuxTTObj != NULL)
     {
         EnterCriticalSection(&AuxTTObj->TTLock);
         if(CmdQHandle)
         {
             //engType = ENGINE_TYPE_RCS;            //use correct offset based on engType (once per-eng offsets known)
             uint64_t RegOffset = 0, L3AdrReg = 0;
-            GET_L3ADROFFSET(0, L3AdrReg);
+            GET_L3ADROFFSET(0, L3AdrReg, GetLibContext());
 
             RegOffset = (L3AdrReg + sizeof(uint32_t));
             RegOffset = L3AdrReg | (RegOffset << 0x20);
@@ -446,7 +449,7 @@ GMM_STATUS GmmLib::GmmPageTableMgr::InitContextAuxTableRegister(HANDLE CmdQHandl
 
             TTCb.pfWriteL3Adr(CmdQHandle, MaskedL3GfxAddress, RegOffset);
 
-            GMM_DPF(GFXDBG_CRITICAL, "AuxTT Map Address: GPUVA=0x%016llX\n", MaskedL3GfxAddress);
+            GMM_DPF(GFXDBG_NORMAL, "AuxTT Map Address: GPUVA=0x%016llX\n", MaskedL3GfxAddress);
 
             //TTCb.pfEpilogTranslationTable(CmdQHandle, 0);
 
@@ -471,7 +474,7 @@ GMM_STATUS GmmLib::GmmPageTableMgr::InitContextAuxTableRegister(HANDLE CmdQHandl
 /////////////////////////////////////////////////////////////////////////////////////
 GMM_STATUS GmmLib::GmmPageTableMgr::UpdateAuxTable(const GMM_DDI_UPDATEAUXTABLE *UpdateReq)
 {
-    if(GetAuxL3TableAddr() == NULL)
+    if(GetAuxL3TableAddr() == 0ULL)
     {
         GMM_ASSERTDPF(0, "Invalid AuxTable update request, AuxTable is not initialized");
         return GMM_INVALIDPARAM;

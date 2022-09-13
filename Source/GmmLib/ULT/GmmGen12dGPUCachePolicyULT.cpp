@@ -49,7 +49,7 @@ void CTestGen12dGPUCachePolicy::SetUpGen12dGPUVariant(PRODUCT_FAMILY platform)
 
     GfxPlatform.eProductFamily = platform;
 
-    GfxPlatform.eRenderCoreFamily = IGFX_GEN12_CORE;
+    GfxPlatform.eRenderCoreFamily = IGFX_XE_HPG_CORE;
 
     pGfxAdapterInfo = (ADAPTER_INFO *)malloc(sizeof(ADAPTER_INFO));
     if(pGfxAdapterInfo)
@@ -58,7 +58,7 @@ void CTestGen12dGPUCachePolicy::SetUpGen12dGPUVariant(PRODUCT_FAMILY platform)
 
         pGfxAdapterInfo->SkuTable.FtrLinearCCS             = 1; //legacy y =>0 - test both
         pGfxAdapterInfo->SkuTable.FtrStandardMipTailFormat = 1;
-        pGfxAdapterInfo->SkuTable.FtrTileY                 = 1;
+        pGfxAdapterInfo->SkuTable.FtrTileY                 = 0;
         pGfxAdapterInfo->SkuTable.FtrLocalMemory           = 1;
         CommonULT::SetUpTestCase();
     }
@@ -80,6 +80,15 @@ TEST_F(CTestGen12dGPUCachePolicy, TestGen12dGPU_DG1CachePolicy)
     TearDownGen12dGPUVariant();
 }
 
+TEST_F(CTestGen12dGPUCachePolicy, TestGen12dGPU_XE_HP_SDVCachePolicy)
+{
+    SetUpGen12dGPUVariant(IGFX_XE_HP_SDV);
+
+    CheckL3Gen12dGPUCachePolicy();
+
+    TearDownGen12dGPUVariant();
+}
+
 void CTestGen12dGPUCachePolicy::CheckSpecialMocs(uint32_t                    Usage,
                                                uint32_t                    AssignedMocsIdx,
                                                GMM_CACHE_POLICY_ELEMENT ClientRequest)
@@ -88,11 +97,13 @@ void CTestGen12dGPUCachePolicy::CheckSpecialMocs(uint32_t                    Usa
     {
         EXPECT_EQ(AssignedMocsIdx, 60) << "Usage# " << Usage << ": Incorrect Index for CCS";
         EXPECT_EQ(0, ClientRequest.L3) << "Usage# " << Usage << ": Incorrect L3 cacheability for CCS";
+        EXPECT_EQ(0, ClientRequest.UcLookup) << "Usage# " << Usage << ": Incorrect L3 LookUp cacheability for CCS";
     }
     else if(Usage == GMM_RESOURCE_USAGE_CCS_MEDIA_WRITABLE) // 61
     {
         EXPECT_EQ(AssignedMocsIdx, 61) << "Usage# " << Usage << ": Incorrect Index for CCS";
         EXPECT_EQ(0, ClientRequest.L3) << "Usage# " << Usage << ": Incorrect L3 cacheability for CCS";
+        EXPECT_EQ(0, ClientRequest.UcLookup) << "Usage# " << Usage << ": Incorrect L3 LookUp cacheability for CCS";
     }
     else if(Usage == GMM_RESOURCE_USAGE_MOCS_62) //62
     {
@@ -134,6 +145,10 @@ void CTestGen12dGPUCachePolicy::CheckL3Gen12dGPUCachePolicy()
 
         //printf("Usage: %d --> Index: [%d]\n", Usage, AssignedMocsIdx);
 
+	if(GfxPlatform.eProductFamily == IGFX_DG2)
+        {
+            StartMocsIdx = 0;
+        }
         if(StartMocsIdx == 1)
         {
             EXPECT_NE(0, AssignedMocsIdx) << "Usage# " << Usage << ": Misprogramming MOCS - Index 0 is reserved for Error";
@@ -145,13 +160,13 @@ void CTestGen12dGPUCachePolicy::CheckL3Gen12dGPUCachePolicy()
         // Check if Mocs Index is not greater than GMM_MAX_NUMBER_MOCS_INDEXES
         EXPECT_GT(GMM_MAX_NUMBER_MOCS_INDEXES, AssignedMocsIdx) << "Usage# " << Usage << ": MOCS Index greater than MAX allowed (63)";
 
-        if(GfxPlatform.eProductFamily <= IGFX_DG1)
+        if(GfxPlatform.eProductFamily <= IGFX_XE_HP_SDV)
         {
             CheckMocsIdxHDCL1(Usage, AssignedMocsIdx, ClientRequest);
         }
 
-        if(GfxPlatform.eProductFamily <= IGFX_DG1)
-        {
+        if(GfxPlatform.eProductFamily < IGFX_DG2)
+	{
             CheckSpecialMocs(Usage, AssignedMocsIdx, ClientRequest);
         }
 
@@ -164,4 +179,44 @@ void CTestGen12dGPUCachePolicy::CheckL3Gen12dGPUCachePolicy()
             EXPECT_EQ(L3_UNCACHEABLE, Mocs.L3.Cacheability) << "Usage# " << Usage << ": Incorrect L3 cachebility setting";
         }
     }
+}
+
+void CTestXe_HP_CachePolicy::SetUpPlatformVariant(PRODUCT_FAMILY platform)
+{
+    printf("%s\n", __FUNCTION__);
+    CTestGen12dGPUCachePolicy::SetUpGen12dGPUVariant(platform);
+}
+
+void CTestXe_HP_CachePolicy::TearDownPlatformVariant()
+{
+    printf("%s\n", __FUNCTION__);
+    CTestGen12dGPUCachePolicy::TearDownGen12dGPUVariant();
+}
+
+void CTestXe_HP_CachePolicy::CheckL3CachePolicy()
+{
+    printf("%s\n", __FUNCTION__);
+    CTestGen12dGPUCachePolicy::CheckL3Gen12dGPUCachePolicy();
+}
+
+void CTestXe_HP_CachePolicy::SetUpTestCase()
+{
+}
+
+void CTestXe_HP_CachePolicy::TearDownTestCase()
+{
+}
+
+TEST_F(CTestXe_HP_CachePolicy, Test_DG2_CachePolicy)
+{
+    SetUpPlatformVariant(IGFX_DG2);
+    CheckL3CachePolicy();
+    TearDownPlatformVariant();
+}
+
+TEST_F(CTestXe_HP_CachePolicy, Test_PVC_CachePolicy)
+{
+    SetUpPlatformVariant(IGFX_PVC);
+    CheckL3CachePolicy();
+    TearDownPlatformVariant();
 }

@@ -69,8 +69,12 @@ typedef enum {
     IGFX_TIGERLAKE_LP,
     IGFX_ROCKETLAKE,
     IGFX_ALDERLAKE_S,
-
-    IGFX_DG1             = 1210,
+    IGFX_ALDERLAKE_P,
+    IGFX_ALDERLAKE_N,
+    IGFX_DG1  = 1210,
+    IGFX_XE_HP_SDV = 1250,
+    IGFX_DG2 = 1270,
+    IGFX_PVC = 1271,
 
     IGFX_MAX_PRODUCT,
     IGFX_GENNEXT               = 0x7ffffffe,
@@ -99,6 +103,9 @@ typedef enum {
     PCH_CMP_V,          // CML V PCH
     PCH_JSP_N,          // JSL N PCH Device IDs for JSL+ Rev02
     PCH_ADL_S,          // ADL_S PCH
+    PCH_ADL_P,          // ADL_P PCH
+    PCH_TGL_H,          // TGL H PCH
+    PCH_ADL_N,          // ADL_N PCH
     PCH_PRODUCT_FAMILY_FORCE_ULONG = 0x7fffffff
 } PCH_PRODUCT_FAMILY;
 
@@ -122,7 +129,11 @@ typedef enum {
     IGFX_GEN11LP_CORE    = 16,  //Gen11 LP Family
     IGFX_GEN12_CORE      = 17,  //Gen12 Family
     IGFX_GEN12LP_CORE    = 18,  //Gen12 LP Family
-                                //Please add new GENs BEFORE THIS !
+    IGFX_XE_HP_CORE      = 0x0c05,  //XE_HP family
+    IGFX_XE_HPG_CORE     = 0x0c07,  // XE_HPG Family
+    IGFX_XE_HPC_CORE     = 0x0c08,  // XE_HPC Family
+                                
+    //Please add new GENs BEFORE THIS !
     IGFX_MAX_CORE,
 
     IGFX_GENNEXT_CORE          = 0x7ffffffe,  //GenNext
@@ -277,7 +288,9 @@ typedef enum __NATIVEGTTYPE
 #define GFX_GET_CURRENT_RENDERCORE(p)  ( (p).eRenderCoreFamily )
 
 // This macro returns true if the product family is discrete
-#define GFX_IS_DISCRETE_FAMILY(p)      ( ( GFX_GET_CURRENT_PRODUCT(p) == IGFX_DG1 ) )
+#define GFX_IS_DISCRETE_FAMILY(p)      ( ( GFX_GET_CURRENT_PRODUCT(p) == IGFX_DG1 ) ||  \
+                                         ( GFX_GET_CURRENT_PRODUCT(p) == IGFX_XE_HP_SDV ) || \
+					 ( GFX_GET_CURRENT_PRODUCT(p) == IGFX_DG2 ) )
 
 // These macros return true/false depending on the current render family.
 #define GFX_IS_NAPA_RENDER_FAMILY(p)   ( ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN3_CORE )    ||   \
@@ -296,6 +309,9 @@ typedef enum __NATIVEGTTYPE
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN10_CORE )   ||   \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN11_CORE )   ||   \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN12_CORE )   ||   \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HP_CORE )   ||   \
+                                         ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPG_CORE )  ||   \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPC_CORE )  ||   \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GENNEXT_CORE ) )
 
 #define GFX_IS_GEN_5_OR_LATER(p)       ( ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN5_CORE )    ||   \
@@ -309,6 +325,9 @@ typedef enum __NATIVEGTTYPE
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN10_CORE )   ||   \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN11_CORE )   ||   \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN12_CORE )   ||   \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HP_CORE )   ||   \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPG_CORE )  ||   \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPC_CORE )  ||   \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GENNEXT_CORE ) )
 
 #define GFX_IS_GEN_5_75_OR_LATER(p)    ( ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN5_75_CORE ) ||   \
@@ -320,6 +339,9 @@ typedef enum __NATIVEGTTYPE
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN10_CORE )   ||   \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN11_CORE )   ||   \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN12_CORE )   ||   \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HP_CORE )   ||   \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPG_CORE )  ||   \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPC_CORE )  ||   \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GENNEXT_CORE ) )
 
 #define GFX_IS_GEN_6_OR_LATER(p)       ( ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN6_CORE )    ||   \
@@ -329,6 +351,9 @@ typedef enum __NATIVEGTTYPE
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN9_CORE )    ||   \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN10_CORE )   ||   \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN11_CORE )   ||   \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HP_CORE )   ||   \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPG_CORE )  ||   \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPC_CORE )  ||   \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GENNEXT_CORE ) )
 
 #define GFX_IS_GEN_7_OR_LATER(p)       ( ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN7_CORE )    ||   \
@@ -338,6 +363,9 @@ typedef enum __NATIVEGTTYPE
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN10_CORE )   ||   \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN11_CORE )   ||   \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN12_CORE )   ||   \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HP_CORE )   ||   \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPG_CORE )  ||   \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPC_CORE )  ||   \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GENNEXT_CORE ) )
 
 #define GFX_IS_GEN_7_5_OR_LATER(p)     ( ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN7_5_CORE )  ||  \
@@ -346,6 +374,9 @@ typedef enum __NATIVEGTTYPE
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN10_CORE )   ||  \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN11_CORE )   ||  \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN12_CORE )   ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HP_CORE )   ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPG_CORE )  ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPC_CORE )  ||  \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GENNEXT_CORE ) )
 
 #define GFX_IS_GEN_8_OR_LATER(p)       ( ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN8_CORE )    ||  \
@@ -353,6 +384,9 @@ typedef enum __NATIVEGTTYPE
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN10_CORE )   ||  \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN11_CORE )   ||  \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN12_CORE )   ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HP_CORE )   ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPG_CORE )  ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPC_CORE )  ||  \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GENNEXT_CORE ) )
 
 #define GFX_IS_GEN_8_CHV_OR_LATER(p)   ( ( GFX_GET_CURRENT_PRODUCT(p) == IGFX_CHERRYVIEW )      ||  \
@@ -360,21 +394,33 @@ typedef enum __NATIVEGTTYPE
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN10_CORE )   ||  \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN11_CORE )   ||  \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN12_CORE )   ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HP_CORE )   ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPG_CORE )  ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPC_CORE )  ||  \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GENNEXT_CORE ) )
 
 #define GFX_IS_GEN_9_OR_LATER(p)       ( ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN9_CORE )    ||  \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN10_CORE )   ||  \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN11_CORE )   ||  \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN12_CORE )   ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPG_CORE )  ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HP_CORE )   ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPC_CORE )  ||  \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GENNEXT_CORE ) )
 
-#define GFX_IS_GEN_10_OR_LATER(p)       (( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN10_CORE )  ||  \
-                                         ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN11_CORE )  ||  \
-                                         ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN12_CORE )   || \
-                                         ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GENNEXT_CORE ) )
-
-#define GFX_IS_GEN_11_OR_LATER(p)       (( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN11_CORE )  ||  \
+#define GFX_IS_GEN_10_OR_LATER(p)       (( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN10_CORE )   ||  \
+                                         ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN11_CORE )   ||  \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN12_CORE )   ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HP_CORE )   ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPG_CORE )  ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPC_CORE )  ||  \
+                                         ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GENNEXT_CORE ) )
+
+#define GFX_IS_GEN_11_OR_LATER(p)       (( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN11_CORE )   ||  \
+                                         ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GEN12_CORE )   ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HP_CORE )   ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPG_CORE )  ||  \
+					 ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_XE_HPC_CORE )  ||  \
                                          ( GFX_GET_CURRENT_RENDERCORE(p) == IGFX_GENNEXT_CORE ) )
 #define GFX_IS_GEN_12_OR_LATER(p)       (( GFX_GET_CURRENT_RENDERCORE(p) >= IGFX_GEN12_CORE ))
 #define GFX_IS_ATOM_PRODUCT_FAMILY(p)  ( GFX_IS_PRODUCT(p, IGFX_VALLEYVIEW)   ||  \
@@ -1184,6 +1230,24 @@ typedef enum __NATIVEGTTYPE
 #define ITGL_LP_1x2x16_DESK_WS_65W_DEVICE_F0_ID 0x9A78      // Desktop WS- S81 - 35W/65W/95W
 #define ITGL_LP_GT0_ULT_DEVICE_F0_ID            0x9A7F      // GT0 - No GFX, Display Only
 
+#define DEV_ID_0205                                0x0205
+#define DEV_ID_020A                                0x020A
+//Internal Validation Sku's Only
+#define DEV_ID_0201                                0x0201
+#define DEV_ID_0202                                0x0202
+#define DEV_ID_0203                                0x0203
+#define DEV_ID_0204                                0x0204
+#define DEV_ID_0206                                0x0206
+#define DEV_ID_0207                                0x0207
+#define DEV_ID_0208                                0x0208
+#define DEV_ID_0209                                0x0209
+#define DEV_ID_020B                                0x020B
+#define DEV_ID_020C                                0x020C
+#define DEV_ID_020D                                0x020D
+#define DEV_ID_020E                                0x020E
+#define DEV_ID_020F                                0x020F
+#define DEV_ID_0210                                0x0210
+
 #define DEV_ID_FF20                             0xFF20
 #define DEV_ID_9A49                             0x9A49
 #define DEV_ID_9A40                             0x9A40
@@ -1248,6 +1312,26 @@ typedef enum __NATIVEGTTYPE
 #define DEV_ID_4693                             0x4693
 #define DEV_ID_4698                             0x4698
 #define DEV_ID_4699                             0x4699
+
+// ADL-P
+#define DEV_ID_46A0                             0x46A0
+#define DEV_ID_46A1                             0x46A1
+#define DEV_ID_46A2                             0x46A2
+#define DEV_ID_46A3                             0x46A3
+#define DEV_ID_46A6                             0x46A6
+#define DEV_ID_46A8                             0x46A8
+#define DEV_ID_46AA                             0x46AA
+#define DEV_ID_4626                             0x4626
+#define DEV_ID_4628                             0x4628
+#define DEV_ID_462A                             0x462A
+#define DEV_ID_46B0                             0x46B0
+#define DEV_ID_46B1                             0x46B1
+#define DEV_ID_46B2                             0x46B2
+#define DEV_ID_46B3                             0x46B3
+#define DEV_ID_46C0                             0x46C0
+#define DEV_ID_46C1                             0x46C1
+#define DEV_ID_46C2                             0x46C2
+#define DEV_ID_46C3                             0x46C3
 
 //ICL PCH LP Device IDs
 #define ICP_LP_RESERVED_FUSE_ID                 0x3480
@@ -1490,9 +1574,308 @@ typedef enum __NATIVEGTTYPE
 #define PCH_CMP_V_DEV_P95_ID                   0xA3DE
 #define PCH_CMP_V_DEV_P96_ID                   0xA3DF
 
+// ADL_S PCH Device ID range
+#define DEV_ID_7A80                            0x7A80
+#define DEV_ID_7A81                            0x7A81
+#define DEV_ID_7A82                            0x7A82
+#define DEV_ID_7A83                            0x7A83
+#define DEV_ID_7A84                            0x7A84
+#define DEV_ID_7A85                            0x7A85
+#define DEV_ID_7A86                            0x7A86
+#define DEV_ID_7A87                            0x7A87
+#define DEV_ID_7A88                            0x7A88
+#define DEV_ID_7A89                            0x7A89
+#define DEV_ID_7A8A                            0x7A8A
+#define DEV_ID_7A8B                            0x7A8B
+#define DEV_ID_7A8C                            0x7A8C
+#define DEV_ID_7A8D                            0x7A8D
+#define DEV_ID_7A8E                            0x7A8E
+#define DEV_ID_7A8F                            0x7A8F
+#define DEV_ID_7A90                            0x7A90
+#define DEV_ID_7A91                            0x7A91
+#define DEV_ID_7A92                            0x7A92
+#define DEV_ID_7A93                            0x7A93
+#define DEV_ID_7A94                            0x7A94
+#define DEV_ID_7A95                            0x7A95
+#define DEV_ID_7A96                            0x7A96
+#define DEV_ID_7A97                            0x7A97
+#define DEV_ID_7A98                            0x7A98
+#define DEV_ID_7A99                            0x7A99
+#define DEV_ID_7A9A                            0x7A9A
+#define DEV_ID_7A9B                            0x7A9B
+#define DEV_ID_7A9C                            0x7A9C
+#define DEV_ID_7A9D                            0x7A9D
+#define DEV_ID_7A9E                            0x7A9E
+#define DEV_ID_7A9F                            0x7A9F
+
+// ADL_P PCH Device ID range
+#define PCH_DEV_ID_5180         0x5180
+#define PCH_DEV_ID_5181         0x5181
+#define PCH_DEV_ID_5182         0x5182
+#define PCH_DEV_ID_5183         0x5183
+#define PCH_DEV_ID_5184         0x5184
+#define PCH_DEV_ID_5185         0x5185
+#define PCH_DEV_ID_5186         0x5186
+#define PCH_DEV_ID_5187         0x5187
+#define PCH_DEV_ID_5188         0x5188
+#define PCH_DEV_ID_5189         0x5189
+#define PCH_DEV_ID_518A         0x518A
+#define PCH_DEV_ID_518B         0x518B
+#define PCH_DEV_ID_518C         0x518C
+#define PCH_DEV_ID_518D         0x518D
+#define PCH_DEV_ID_518E         0x518E
+#define PCH_DEV_ID_518F         0x518F
+#define PCH_DEV_ID_5190         0x5190
+#define PCH_DEV_ID_5191         0x5191
+#define PCH_DEV_ID_5192         0x5192
+#define PCH_DEV_ID_5193         0x5193
+#define PCH_DEV_ID_5194         0x5194
+#define PCH_DEV_ID_5195         0x5195
+#define PCH_DEV_ID_5196         0x5196
+#define PCH_DEV_ID_5197         0x5197
+#define PCH_DEV_ID_5198         0x5198
+#define PCH_DEV_ID_5199         0x5199
+#define PCH_DEV_ID_519A         0x519A
+#define PCH_DEV_ID_519B         0x519B
+#define PCH_DEV_ID_519C         0x519C
+#define PCH_DEV_ID_519D         0x519D
+#define PCH_DEV_ID_519E         0x519E
+#define PCH_DEV_ID_519F         0x519F
+
+// ADL_N PCH Device ID range
+#define PCH_DEV_ID_5480         0x5480
+#define PCH_DEV_ID_5481         0x5481
+#define PCH_DEV_ID_5482         0x5482
+#define PCH_DEV_ID_5483         0x5483
+#define PCH_DEV_ID_5484         0x5484
+#define PCH_DEV_ID_5485         0x5485
+#define PCH_DEV_ID_5486         0x5486
+#define PCH_DEV_ID_5487         0x5487
+#define PCH_DEV_ID_5488         0x5488
+#define PCH_DEV_ID_5489         0x5489
+#define PCH_DEV_ID_548A         0x548A
+#define PCH_DEV_ID_548B         0x548B
+#define PCH_DEV_ID_548C         0x548C
+#define PCH_DEV_ID_548D         0x548D
+#define PCH_DEV_ID_548E         0x548E
+#define PCH_DEV_ID_548F         0x548F
+#define PCH_DEV_ID_5490         0x5490
+#define PCH_DEV_ID_5491         0x5491
+#define PCH_DEV_ID_5492         0x5492
+#define PCH_DEV_ID_5493         0x5493
+#define PCH_DEV_ID_5494         0x5494
+#define PCH_DEV_ID_5495         0x5495
+#define PCH_DEV_ID_5496         0x5496
+#define PCH_DEV_ID_5497         0x5497
+#define PCH_DEV_ID_5498         0x5498
+#define PCH_DEV_ID_5499         0x5499
+#define PCH_DEV_ID_549A         0x549A
+#define PCH_DEV_ID_549B         0x549B
+#define PCH_DEV_ID_549C         0x549C
+#define PCH_DEV_ID_549D         0x549D
+#define PCH_DEV_ID_549E         0x549E
+#define PCH_DEV_ID_549F         0x549F
+#define PCH_DEV_ID_54A0         0x54A0
+#define PCH_DEV_ID_54A1         0x54A1
+#define PCH_DEV_ID_54A2         0x54A2
+#define PCH_DEV_ID_54A3         0x54A3
+#define PCH_DEV_ID_54A4         0x54A4
+#define PCH_DEV_ID_15FB         0x15FB
+#define PCH_DEV_ID_15FC         0x15FC
+#define PCH_DEV_ID_54A6         0x54A6
+#define PCH_DEV_ID_54A7         0x54A7
+#define PCH_DEV_ID_54A8         0x54A8
+#define PCH_DEV_ID_54A9         0x54A9
+#define PCH_DEV_ID_54AA         0x54AA
+#define PCH_DEV_ID_54AB         0x54AB
+#define PCH_DEV_ID_54AC         0x54AC
+#define PCH_DEV_ID_54AD         0x54AD
+#define PCH_DEV_ID_54AE         0x54AE
+#define PCH_DEV_ID_54AF         0x54AF
+#define PCH_DEV_ID_54B0         0x54B0
+#define PCH_DEV_ID_54B1         0x54B1
+#define PCH_DEV_ID_54B2         0x54B2
+#define PCH_DEV_ID_54B3         0x54B3
+#define PCH_DEV_ID_54B4         0x54B4
+#define PCH_DEV_ID_54B5         0x54B5
+#define PCH_DEV_ID_54B6         0x54B6
+#define PCH_DEV_ID_54B7         0x54B7
+#define PCH_DEV_ID_54B8         0x54B8
+#define PCH_DEV_ID_54B9         0x54B9
+#define PCH_DEV_ID_54BA         0x54BA
+#define PCH_DEV_ID_54BB         0x54BB
+#define PCH_DEV_ID_54BC         0x54BC
+#define PCH_DEV_ID_54BD         0x54BD
+#define PCH_DEV_ID_54BE         0x54BE
+#define PCH_DEV_ID_54BF         0x54BF
+#define PCH_DEV_ID_54C4         0x54C4
+#define PCH_DEV_ID_54C5         0x54C5
+#define PCH_DEV_ID_54C6         0x54C6
+#define PCH_DEV_ID_54C7         0x54C7
+#define PCH_DEV_ID_54C8         0x54C8
+#define PCH_DEV_ID_54C9         0x54C9
+#define PCH_DEV_ID_54CA         0x54CA
+#define PCH_DEV_ID_54CB         0x54CB
+#define PCH_DEV_ID_54CC         0x54CC
+#define PCH_DEV_ID_54CD         0x54CD
+#define PCH_DEV_ID_54CE         0x54CE
+#define PCH_DEV_ID_54CF         0x54CF
+#define PCH_DEV_ID_54D0         0x54D0
+#define PCH_DEV_ID_54D1         0x54D1
+#define PCH_DEV_ID_54D2         0x54D2
+#define PCH_DEV_ID_54D3         0x54D3
+#define PCH_DEV_ID_54D4         0x54D4
+#define PCH_DEV_ID_54D6         0x54D6
+#define PCH_DEV_ID_54D7         0x54D7
+#define PCH_DEV_ID_282A         0x282A
+#define PCH_DEV_ID_54D8         0x54D8
+#define PCH_DEV_ID_54D9         0x54D9
+#define PCH_DEV_ID_54DA         0x54DA
+#define PCH_DEV_ID_54DB         0x54DB
+#define PCH_DEV_ID_54DC         0x54DC
+#define PCH_DEV_ID_54DD         0x54DD
+#define PCH_DEV_ID_54DE         0x54DE
+#define PCH_DEV_ID_54DF         0x54DF
+#define PCH_DEV_ID_54E0         0x54E0
+#define PCH_DEV_ID_54E1         0x54E1
+#define PCH_DEV_ID_54E2         0x54E2
+#define PCH_DEV_ID_54E3         0x54E3
+#define PCH_DEV_ID_54E4         0x54E4
+#define PCH_DEV_ID_54E5         0x54E5
+#define PCH_DEV_ID_54E6         0x54E6
+#define PCH_DEV_ID_54E7         0x54E7
+#define PCH_DEV_ID_54E8         0x54E8
+#define PCH_DEV_ID_54E9         0x54E9
+#define PCH_DEV_ID_54EA         0x54EA
+#define PCH_DEV_ID_54EB         0x54EB
+#define PCH_DEV_ID_54ED         0x54ED
+#define PCH_DEV_ID_54EE         0x54EE
+#define PCH_DEV_ID_54EF         0x54EF
+#define PCH_DEV_ID_54F0         0x54F0
+#define PCH_DEV_ID_54F1         0x54F1
+#define PCH_DEV_ID_54F2         0x54F2
+#define PCH_DEV_ID_54F3         0x54F3
+#define PCH_DEV_ID_54F4         0x54F4
+#define PCH_DEV_ID_54F5         0x54F5
+#define PCH_DEV_ID_54F6         0x54F6
+#define PCH_DEV_ID_54F7         0x54F7
+#define PCH_DEV_ID_54F9         0x54F9
+#define PCH_DEV_ID_54FA         0x54FA
+#define PCH_DEV_ID_54FB         0x54FB
+#define PCH_DEV_ID_54FC         0x54FC
+#define PCH_DEV_ID_54FD         0x54FD
+#define PCH_DEV_ID_54FE         0x54FE
+#define PCH_DEV_ID_54FF         0x54FF
+
+//PVC Device ID
+#define DEV_ID_0BD0                            0x0BD0
+#define DEV_ID_0BD5                            0x0BD5
+
+// Macro to identify PVC device ID
+#define GFX_IS_XT_CONFIG(d) (d == DEV_ID_0BD5)
+
+//DG2 Device IDs
+#define DEV_ID_4F80                             0x4F80
+#define DEV_ID_4F81                             0x4F81
+#define DEV_ID_4F82                             0x4F82
+#define DEV_ID_4F83                             0x4F83
+#define DEV_ID_4F84                             0x4F84
+#define DEV_ID_4F85                             0x4F85
+#define DEV_ID_4F86                             0x4F86
+#define DEV_ID_4F87                             0x4F87
+#define DEV_ID_4F88                             0x4F88
+#define DEV_ID_5690                             0x5690
+#define DEV_ID_5691                             0x5691
+#define DEV_ID_5692                             0x5692
+#define DEV_ID_5693                             0x5693
+#define DEV_ID_5694                             0x5694
+#define DEV_ID_5695                             0x5695
+#define DEV_ID_5696                             0x5696
+#define DEV_ID_5697                             0x5697
+#define DEV_ID_5698                             0x5698
+#define DEV_ID_56A0                             0x56A0
+#define DEV_ID_56A1                             0x56A1
+#define DEV_ID_56A2                             0x56A2
+#define DEV_ID_56A3                             0x56A3
+#define DEV_ID_56A4                             0x56A4
+#define DEV_ID_56A5                             0x56A5
+#define DEV_ID_56A6                             0x56A6
+#define DEV_ID_56B0                             0x56B0
+#define DEV_ID_56B1                             0x56B1
+#define DEV_ID_56B2                             0x56B2
+#define DEV_ID_56B3                             0x56B3
+#define DEV_ID_56C0                             0x56C0
+#define DEV_ID_56C1                             0x56C1
+
+
+// RPL-P
+#define DEV_ID_A7A0                             0xA7A0
+#define DEV_ID_A7A1                             0xA7A1
+#define DEV_ID_A7A8                             0xA7A8
+#define DEV_ID_A7A9                             0xA7A9
+#define DEV_ID_A720                             0xA720
+#define DEV_ID_A721                             0xA721
+
+// ADL-N
+#define DEV_ID_46D0                            0x46D0
+#define DEV_ID_46D1                            0x46D1
+#define DEV_ID_46D2                            0x46D2
+
 #define MGM_HAS     0
 
 //#define SDG_HAS      1              //Reserve place for Springdale-G HAS
 //#define SDG_SUPPORT    1              //Springdale G build switch
-#endif
 
+// Macro to identify DG2 device IDs
+#define GFX_IS_DG2_G11_CONFIG(d) ( ( d == DEV_ID_56A5 )               ||   \
+                                 ( d == DEV_ID_56A6 )             ||   \
+                                 ( d == DEV_ID_5693 )             ||   \
+                                 ( d == DEV_ID_5694 )             ||   \
+                                 ( d == DEV_ID_5695 )             ||   \
+                                 ( d == DEV_ID_56B0 )             ||   \
+                                 ( d == DEV_ID_56B1 )             ||   \
+                                 ( d == DEV_ID_56C1 )             ||   \
+                                 ( d == DEV_ID_4F87 )             ||   \
+                                 ( d == DEV_ID_4F88 ))
+
+#define GFX_IS_DG2_G10_CONFIG(d) ( ( d == DEV_ID_56A0 )                              ||   \
+                                      ( d == DEV_ID_56A1 )                              ||   \
+                                      ( d == DEV_ID_56A2 )                              ||   \
+                                      ( d == DEV_ID_5690 )                              ||   \
+                                      ( d == DEV_ID_5691 )                              ||   \
+                                      ( d == DEV_ID_5692 )                              ||   \
+                                      ( d == DEV_ID_56C0 )                              ||   \
+                                      ( d == DEV_ID_4F80 )                              ||   \
+                                      ( d == DEV_ID_4F81 )                              ||   \
+                                      ( d == DEV_ID_4F82 )                              ||   \
+                                      ( d == DEV_ID_4F83 )                              ||   \
+                                      ( d == DEV_ID_4F84 ))
+
+#define GFX_IS_DG2_G12_CONFIG(d)   ( ( d == DEV_ID_4F85 )                              ||   \
+                                      ( d == DEV_ID_4F86 )                              ||   \
+                                      ( d == DEV_ID_56A3 )                              ||   \
+                                      ( d == DEV_ID_56A4 )                              ||   \
+                                      ( d == DEV_ID_5696 )                              ||   \
+                                      ( d == DEV_ID_5697 )                              ||   \
+                                      ( d == DEV_ID_56B2 )                              ||   \
+                                      ( d == DEV_ID_56B3 ))
+
+//we define the highest cap and lower cap of stepping IDs
+#define SI_REV_ID(lo,hi) (lo | hi<<16)
+
+#define SI_REV_LO(SteppingID) (SteppingID & 0xFFFF)
+
+#define SI_WA_FROM(ulRevID, STEPPING) (ulRevID >= (int)SI_REV_LO(STEPPING))
+
+//define DG2 Media Rev ID
+#ifdef DG2_MEDIA_REV_ID_B0
+#undef DG2_MEDIA_REV_ID_B0
+#endif
+#define DG2_MEDIA_REV_ID_B0   SI_REV_ID(4,4)
+
+#ifdef ACM_G10_MEDIA_REV_ID_B0
+#undef ACM_G10_MEDIA_REV_ID_B0
+#endif
+#define ACM_G10_MEDIA_REV_ID_B0   SI_REV_ID(4,4)
+
+#endif

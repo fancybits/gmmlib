@@ -149,6 +149,15 @@ typedef struct GMM_RESOURCE_ALIGNMENT_REC
     typedef struct GmmPageTableMgr GMM_PAGETABLE_MGR;
 #endif
 
+#ifdef __cplusplus
+    namespace GmmLib
+    {
+        class Context;
+    } // namespace GmmLib
+    typedef GmmLib::Context GMM_LIB_CONTEXT;
+#else
+typedef struct GmmLibContext GMM_LIB_CONTEXT;
+#endif
 //===========================================================================
 // typedef:
 //        GMM_RESOURCE_INFO
@@ -178,7 +187,7 @@ typedef struct GMM_RESOURCE_ALIGNMENT_REC
 #endif
 
 //===========================================================================
-// TBD - Place holder for GMM_RESOURCE_FLAG definition.
+// Place holder for GMM_RESOURCE_FLAG definition.
 //---------------------------------------------------------------------------
 #include "GmmResourceFlags.h"
 #if defined __linux__
@@ -220,6 +229,49 @@ typedef struct GMM_S3D_INFO_REC
     uint8_t            IsRFrame;             // Flag indicating this is the R frame
 } GMM_S3D_INFO;
 
+//===========================================================================
+// typedef:
+//        GMM_MULTI_TILE_ARCH
+//
+// Description:
+//     This structure is provides an advanced allocation interface for 4xXeHP
+//     multi tile Gpu support
+//---------------------------------------------------------------------------
+typedef struct GMM_MULTI_TILE_ARCH_REC // FtrMultiTileArch Advanced Parameters...
+{
+
+    uint8_t Enable          : 1;    // When FALSE, this struct is ignored
+                                    // and GMM will make such decisions
+                                    // based on the process's default
+                                    // tile assignment from KMD.
+
+    uint8_t TileInstanced   : 1;    // When TRUE allocation is Tile
+                                    // instanced resource
+
+    uint8_t GpuVaMappingSet;        // Bitmask indicating which tiles
+                                    // should receive page table updates
+                                    // when this allocation is mapped.
+                                    // For all tiles set ADAPTER_INFO.MultiTileArch.TileMask
+
+    uint8_t LocalMemEligibilitySet; // Bitmask indicating which tile's
+                                    // Local Memory this allocation
+                                    // can reside in--i.e. in addition to
+                                    // its preferred set, which others
+                                    // can it be migrated to under memory
+                                    // pressure. Entirely zeroed mask
+                                    // would be used for NonLocalOnly
+                                    // allocations.
+
+    uint8_t LocalMemPreferredSet;   // Bitmask indicating subset of above
+                                    // eligibility set that is preferred
+                                    // above the others. Entirely zeroed
+                                    // mask is equivalent to mask of all
+                                    // ones--i.e. "no preference within
+                                    // eligibility set".
+
+    uint32_t Reserved;
+
+} GMM_MULTI_TILE_ARCH;
 //===========================================================================
 // typedef:
 //        GMM_RESCREATE_PARAMS
@@ -285,6 +337,7 @@ typedef struct GMM_RESCREATE_PARAMS_REC
     uint32_t                               MaximumRenamingListLength;
     uint8_t                             NoGfxMemory;
     GMM_RESOURCE_INFO                   *pPreallocatedResInfo;
+    GMM_MULTI_TILE_ARCH                 MultiTileArch;
 
 } GMM_RESCREATE_PARAMS;
 
@@ -308,7 +361,28 @@ typedef struct GMM_RESCREATE_CUSTOM_PARAMS__REC
     }PlaneOffset;
 
     uint32_t NoOfPlanes;
+    uint32_t CpTag;
 }GMM_RESCREATE_CUSTOM_PARAMS;
+
+#ifndef __GMM_KMD__
+typedef struct GMM_RESCREATE_CUSTOM_PARAMS_2_REC : public GMM_RESCREATE_CUSTOM_PARAMS
+{
+    struct
+    {
+        uint32_t       Pitch;
+        GMM_GFX_SIZE_T Size;
+        uint32_t       BaseAlignment;
+        struct
+        {
+            uint32_t X[GMM_MAX_PLANE];
+            uint32_t Y[GMM_MAX_PLANE];
+        } PlaneOffset;
+    } AuxSurf;
+
+    uint64_t Reserved;
+    uint64_t Reserved1;
+}GMM_RESCREATE_CUSTOM_PARAMS_2;
+#endif
 
 //===========================================================================
 // enum :
@@ -362,6 +436,7 @@ typedef struct GMM_RESCREATE_CUSTOM_PARAMS__REC
 //     C. GmmResGetAuxSurfaceOffset(pRes, GMM_AUX_CCS or GMM_AUX_ZCS)
 typedef enum
 {
+    GMM_AUX_INVALID,   // Main resource
     GMM_AUX_CCS,    // RT buffer's color control surface (Unpadded)
     GMM_AUX_Y_CCS,  // color control surface for Y-plane
     GMM_AUX_UV_CCS, // color control surface for UV-plane
@@ -494,15 +569,15 @@ uint8_t             GMM_STDCALL GmmIsUVPacked(GMM_RESOURCE_FORMAT Format);
 bool                GMM_STDCALL GmmIsYUVFormatLCUAligned(GMM_RESOURCE_FORMAT Format);
 #define                         GmmIsYUVPlanar GmmIsPlanar // TODO(Benign): Support old name until we have a chance to correct in UMD(s) using this. No longer YUV since there are now RGB planar formats.
 uint8_t             GMM_STDCALL GmmIsReconstructableSurface(GMM_RESOURCE_FORMAT Format);
-uint8_t             GMM_STDCALL GmmIsCompressed(GMM_RESOURCE_FORMAT Format);
+uint8_t             GMM_STDCALL GmmIsCompressed(void *pLibContext, GMM_RESOURCE_FORMAT Format);
 uint8_t             GMM_STDCALL GmmIsYUVPacked(GMM_RESOURCE_FORMAT Format);
 uint8_t             GMM_STDCALL GmmIsRedecribedPlanes(GMM_RESOURCE_INFO *pGmmResource);
 uint8_t             GMM_STDCALL GmmResApplyExistingSysMem(GMM_RESOURCE_INFO *pGmmResource, void *pExistingSysMem, GMM_GFX_SIZE_T ExistingSysMemSize);
-uint8_t             GMM_STDCALL GmmIsStdTilingSupported(GMM_RESCREATE_PARAMS *pCreateParams);
+uint8_t             GMM_STDCALL GmmGetLosslessCompressionType(void *pLibContext, GMM_RESOURCE_FORMAT Format);
 GMM_RESOURCE_INFO*  GMM_STDCALL GmmResCopy(GMM_RESOURCE_INFO *pGmmResource);
 void                GMM_STDCALL GmmResMemcpy(void *pDst, void *pSrc);
 uint8_t             GMM_STDCALL GmmResCpuBlt(GMM_RESOURCE_INFO *pGmmResource, GMM_RES_COPY_BLT *pBlt);
-GMM_RESOURCE_INFO*  GMM_STDCALL GmmResCreate(GMM_RESCREATE_PARAMS *pCreateParams);
+GMM_RESOURCE_INFO   *GMM_STDCALL GmmResCreate(GMM_RESCREATE_PARAMS *pCreateParams, GMM_LIB_CONTEXT *pLibContext);
 void                GMM_STDCALL GmmResFree(GMM_RESOURCE_INFO *pGmmResource);
 GMM_GFX_SIZE_T      GMM_STDCALL GmmResGetSizeMainSurface(const GMM_RESOURCE_INFO *pResourceInfo);
 GMM_GFX_SIZE_T      GMM_STDCALL GmmResGetSizeSurface(GMM_RESOURCE_INFO *pResourceInfo);
@@ -561,7 +636,7 @@ uint32_t                GMM_STDCALL GmmResGetRotateInfo(GMM_RESOURCE_INFO *pGmmR
 GMM_MSAA_SAMPLE_PATTERN GMM_STDCALL GmmResGetSamplePattern(GMM_RESOURCE_INFO *pGmmResource);
 uint32_t                GMM_STDCALL GmmResGetSizeOfStruct(void);
 GMM_SURFACESTATE_FORMAT GMM_STDCALL GmmResGetSurfaceStateFormat(GMM_RESOURCE_INFO *pGmmResource);
-GMM_SURFACESTATE_FORMAT GMM_STDCALL GmmGetSurfaceStateFormat(GMM_RESOURCE_FORMAT Format);
+GMM_SURFACESTATE_FORMAT GMM_STDCALL GmmGetSurfaceStateFormat(GMM_RESOURCE_FORMAT Format,GMM_LIB_CONTEXT* pGmmLibContext);
 uint32_t               GMM_STDCALL GmmResGetSurfaceStateHAlign(GMM_RESOURCE_INFO *pGmmResource);
 uint32_t               GMM_STDCALL GmmResGetSurfaceStateVAlign(GMM_RESOURCE_INFO *pGmmResource);
 uint32_t               GMM_STDCALL GmmResGetSurfaceStateTiledResourceMode(GMM_RESOURCE_INFO *pGmmResource);
@@ -589,12 +664,13 @@ uint32_t               GMM_STDCALL GmmResTranslateColorSeparationX(GMM_RESOURCE_
 uint32_t               GMM_STDCALL GmmResGetColorSeparationArraySize(GMM_RESOURCE_INFO *pGmmResource);
 uint32_t               GMM_STDCALL GmmResGetColorSeparationPhysicalWidth(GMM_RESOURCE_INFO *pGmmResource);
 uint8_t                GMM_STDCALL GmmResGetSetHardwareProtection(GMM_RESOURCE_INFO *pGmmResource, uint8_t GetIsEncrypted, uint8_t SetIsEncrypted);
-uint32_t               GMM_STDCALL GmmResGetMaxGpuVirtualAddressBits(GMM_RESOURCE_INFO *pGmmResource);
+uint32_t               GMM_STDCALL GmmResGetMaxGpuVirtualAddressBits(GMM_RESOURCE_INFO *pGmmResource, GMM_LIB_CONTEXT* pGmmLibContext);
 uint8_t                GMM_STDCALL GmmIsSurfaceFaultable(GMM_RESOURCE_INFO *pGmmResource);
 uint32_t               GMM_STDCALL GmmResGetMaximumRenamingListLength(GMM_RESOURCE_INFO* pGmmResource);
 GMM_GFX_SIZE_T      GMM_STDCALL GmmResGetPlanarGetXOffset(GMM_RESOURCE_INFO *pGmmResource, GMM_YUV_PLANE Plane);
 GMM_GFX_SIZE_T      GMM_STDCALL GmmResGetPlanarGetYOffset(GMM_RESOURCE_INFO *pGmmResource, GMM_YUV_PLANE Plane);
 GMM_GFX_SIZE_T      GMM_STDCALL GmmResGetPlanarAuxOffset(GMM_RESOURCE_INFO *pGmmResource, uint32_t ArrayIndex, GMM_UNIFIED_AUX_TYPE Plane);
+void                GMM_STDCALL GmmResSetLibContext(GMM_RESOURCE_INFO *pGmmResource, void *pLibContext);
 
 // Remove when client moves to new interface
 uint32_t            GMM_STDCALL GmmResGetRenderSize(GMM_RESOURCE_INFO *pResourceInfo);
@@ -633,16 +709,18 @@ void                GMM_STDCALL GmmResOverrideAllocationMaxLod(GMM_RESOURCE_INFO
 //////////////////////////////////////////////////////////////////////////////////////
 // GmmCachePolicy.c
 //////////////////////////////////////////////////////////////////////////////////////
-MEMORY_OBJECT_CONTROL_STATE GMM_STDCALL GmmCachePolicyGetMemoryObject(GMM_RESOURCE_INFO *pResInfo ,
+MEMORY_OBJECT_CONTROL_STATE GMM_STDCALL GmmCachePolicyGetMemoryObject(void *pLibContext, 
+                                                                    GMM_RESOURCE_INFO *pResInfo,
                                                                     GMM_RESOURCE_USAGE_TYPE Usage);
-GMM_PTE_CACHE_CONTROL_BITS  GMM_STDCALL GmmCachePolicyGetPteType(GMM_RESOURCE_USAGE_TYPE Usage);
+GMM_PTE_CACHE_CONTROL_BITS GMM_STDCALL GmmCachePolicyGetPteType(void *pLibContext, GMM_RESOURCE_USAGE_TYPE Usage);
 GMM_RESOURCE_USAGE_TYPE     GMM_STDCALL GmmCachePolicyGetResourceUsage(GMM_RESOURCE_INFO *pResInfo );
-MEMORY_OBJECT_CONTROL_STATE GMM_STDCALL GmmCachePolicyGetOriginalMemoryObject(GMM_RESOURCE_INFO *pResInfo);
-uint8_t                     GMM_STDCALL GmmCachePolicyIsUsagePTECached(GMM_RESOURCE_USAGE_TYPE Usage);
+MEMORY_OBJECT_CONTROL_STATE GMM_STDCALL GmmCachePolicyGetOriginalMemoryObject(void *pLibContext, GMM_RESOURCE_INFO *pResInfo);
+uint8_t                     GMM_STDCALL GmmCachePolicyIsUsagePTECached(void *pLibContext, GMM_RESOURCE_USAGE_TYPE Usage);
+uint8_t                     GMM_STDCALL GmmGetSurfaceStateL1CachePolicy(void *pLibContext, GMM_RESOURCE_USAGE_TYPE Usage);
 void                        GMM_STDCALL GmmCachePolicyOverrideResourceUsage(GMM_RESOURCE_INFO *pResInfo, GMM_RESOURCE_USAGE_TYPE Usage);
-uint32_t                    GMM_STDCALL GmmCachePolicyGetMaxMocsIndex();
-uint32_t                    GMM_STDCALL GmmCachePolicyGetMaxL1HdcMocsIndex();
-uint32_t                    GMM_STDCALL GmmCachePolicyGetMaxSpecialMocsIndex();
+uint32_t                    GMM_STDCALL GmmCachePolicyGetMaxMocsIndex(void *pLibContext);
+uint32_t                    GMM_STDCALL GmmCachePolicyGetMaxL1HdcMocsIndex(void *pLibContext);
+uint32_t                    GMM_STDCALL GmmCachePolicyGetMaxSpecialMocsIndex(void *pLibContext);
 
 
 void                        GMM_STDCALL GmmResSetPrivateData(GMM_RESOURCE_INFO *pGmmResource, void *pPrivateData);

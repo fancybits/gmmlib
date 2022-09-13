@@ -38,27 +38,29 @@ typedef struct GMM_CACHE_POLICY_ELEMENT_REC
 {
     uint32_t                       IDCode;
     union {
-        struct{
-            uint32_t                   LLC         : 1;
-            uint32_t                   ELLC        : 1;
-            uint32_t                   L3          : 1;
-            uint32_t                   WT          : 1;
-            uint32_t                   AGE         : 2;
-            uint32_t                   AOM         : 1;
-            uint32_t                   LeCC_SCC    : 3;
-            uint32_t                   L3_SCC      : 3;
-            uint32_t                   SCF         : 1; // Snoop Control Field for BXT
-            uint32_t                   CoS         : 2; // Class of Service, driver default to Class 0
-            uint32_t                   SSO         : 2; // Self Snoop Override  control and value
-            uint32_t                   HDCL1       : 1; // HDC L1 caching enable/disable
-            uint32_t                   L3Eviction  : 2; // Specify L3-eviction type (NA, ReadOnly, Standard, Special)
-            uint32_t                   Initialized : 1;
-            uint32_t                   SegOv       : 3; // Override seg-pref (none, local-only, sys-only, etc)
-            uint32_t                   GlbGo       : 1; // Global GO point - L3 or Memory
-            uint32_t                   UcLookup    : 1; // Snoop L3 for uncached 
-            uint32_t                   Reserved    : 5;
-        };
-        uint32_t Value;
+       struct{
+            uint64_t                  LLC         : 1;
+            uint64_t                    ELLC        : 1;
+            uint64_t                   L3          : 1;
+            uint64_t                   WT          : 1;
+            uint64_t                   AGE         : 2;
+            uint64_t                   AOM         : 1;
+            uint64_t                   LeCC_SCC    : 3;
+            uint64_t                   L3_SCC      : 3;
+            uint64_t                   SCF         : 1; // Snoop Control Field for BXT
+            uint64_t                   CoS         : 2; // Class of Service, driver default to Class 0
+            uint64_t                   SSO         : 2; // Self Snoop Override  control and value
+            uint64_t                   HDCL1       : 1; // HDC L1 caching enable/disable
+            uint64_t                   L3Eviction  : 2; // Specify L3-eviction type (NA, ReadOnly, Standard, Special)
+            uint64_t                   SegOv       : 3; // Override seg-pref (none, local-only, sys-only, etc)
+            uint64_t                   GlbGo       : 1; // Global GO point - L3 or Memory
+            uint64_t                   UcLookup    : 1; // Snoop L3 for uncached 
+            uint64_t                   L1CC        : 3; // L1 Cache Control
+	    uint64_t                   Initialized : 1;
+            uint64_t                   Reserved    : 34;
+
+	};
+        uint64_t Value;    
     };
 
     MEMORY_OBJECT_CONTROL_STATE               MemoryObjectOverride;
@@ -94,7 +96,9 @@ typedef struct GMM_CACHE_POLICY_TBL_ELEMENT_REC {
             uint16_t ESC                : 1; // Enable Skip Caching (ESC) for L3.
             uint16_t SCC                : 3; // Skip Caching Control (SCC) for L3.
             uint16_t Cacheability       : 2; // L3 Cacheability Control (L3CC).
-            uint16_t Reserved           : 10;
+            uint16_t GlobalGo           : 1; // Global Go (GLBGO).
+            uint16_t UCLookup           : 1; // UC L3 Lookup (UcL3Lookup).
+            uint16_t Reserved           : 8;
         } ;
         uint16_t UshortValue;
     } L3;
@@ -141,7 +145,7 @@ typedef enum GMM_GFX_PAT_IDX_REC
     PAT7            // Will be tied to GMM_GFX_PAT_WC
 }GMM_GFX_PAT_IDX;
 
-#define GFX_IS_ATOM_PLATFORM (GmmGetSkuTable(pGmmGlobalContext)->FtrLCIA)
+#define GFX_IS_ATOM_PLATFORM(pGmmLibContext) (GmmGetSkuTable(pGmmLibContext)->FtrLCIA)
 
 typedef enum GMM_GFX_TARGET_CACHE_REC
 {
@@ -209,6 +213,9 @@ typedef union GMM_PRIVATE_PAT_REC {
         if (!REGISTRY_OVERRIDE_READ(Usage,CoS))        CoS        = -1;             \
         if (!REGISTRY_OVERRIDE_READ(Usage,HDCL1))      HDCL1      = -1;             \
         if (!REGISTRY_OVERRIDE_READ(Usage,L3Eviction)) L3Eviction = -1;             \
+        if (!REGISTRY_OVERRIDE_READ(Usage,GlbGo))      GlbGo      = -1;             \
+        if (!REGISTRY_OVERRIDE_READ(Usage,UcLookup))   UcLookup   = -1;             \
+
 
 
 #define SETOVERRIDES(Usage)                                                     \
@@ -264,6 +271,14 @@ typedef union GMM_PRIVATE_PAT_REC {
         {                                                                       \
             pCachePolicy[Usage].L3Eviction = L3Eviction;                        \
         }                                                                       \
+        if (GlbGo != -1)                                                        \
+        {                                                                       \
+            pCachePolicy[Usage].GlbGo = GlbGo;                                  \
+        }                                                                       \
+        if (UcLookup != -1)                                                     \
+        {                                                                       \
+            pCachePolicy[Usage].UcLookup = UcLookup;                            \
+        }                                                                       \
         {                                                                       \
             pCachePolicy[Usage].IsOverridenByRegkey = 1;                        \
         }
@@ -296,6 +311,9 @@ typedef union GMM_PRIVATE_PAT_REC {
         REGISTRY_OVERRIDE_WRITE(Usage,HDCL1, pCachePolicy[Usage].HDCL1);           \
         REGISTRY_OVERRIDE_WRITE(Usage,L3Eviction, pCachePolicy[Usage].L3Eviction); \
         REGISTRY_OVERRIDE_WRITE(Usage,Enable,0);                                   \
+        REGISTRY_OVERRIDE_WRITE(Usage,GlbGo, pCachePolicy[Usage].GlbGo);           \
+        REGISTRY_OVERRIDE_WRITE(Usage,UcLookup, pCachePolicy[Usage].UcLookup);     \
+
     }                                                                              \
     else if (GenerateKeys == UNCACHED || GenerateKeys == CURRENT)                  \
     {                                                                              \
@@ -317,6 +335,8 @@ typedef union GMM_PRIVATE_PAT_REC {
         REGISTRY_OVERRIDE_WRITE(Usage,HDCL1, HDCL1);                               \
         REGISTRY_OVERRIDE_WRITE(Usage,L3Eviction, L3Eviction);                     \
         REGISTRY_OVERRIDE_WRITE(Usage,Enable,Enable);                              \
+        REGISTRY_OVERRIDE_WRITE(Usage,GlbGo, GlbGo);                               \
+        REGISTRY_OVERRIDE_WRITE(Usage,UcLookup, UcLookup);                         \
     }                                                                              \
                                                                                    \
     if (Enable)                                                                    \
@@ -349,7 +369,7 @@ typedef union GMM_PRIVATE_PAT_REC {
 
 // Function Prototypes
 GMM_STATUS  GmmInitializeCachePolicy();
-GMM_GFX_MEMORY_TYPE GmmGetWantedMemoryType(GMM_CACHE_POLICY_ELEMENT CachePolicy);
+GMM_GFX_MEMORY_TYPE GmmGetWantedMemoryType(void *pLibContext, GMM_CACHE_POLICY_ELEMENT CachePolicy);
 
 // Used for GMM ULT testing.
 #ifdef __GMM_ULT
