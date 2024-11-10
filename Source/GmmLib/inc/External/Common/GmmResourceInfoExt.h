@@ -130,7 +130,6 @@ typedef struct GMM_RESOURCE_ALIGNMENT_REC
     uint32_t   PackedMipHeight;        // Packed Mip Height in # of 64KB Tiles (Pre-Gen9 / Undefined64KBSwizzle)
     uint32_t   QPitch;                 // Programmable QPitch (BDW+)
 }GMM_RESOURCE_ALIGNMENT;
-
 //===========================================================================
 // typedef:
 //        GMM_PAGETABLE_MGR
@@ -364,6 +363,19 @@ typedef struct GMM_RESCREATE_CUSTOM_PARAMS__REC
     uint32_t CpTag;
 }GMM_RESCREATE_CUSTOM_PARAMS;
 
+typedef union GMM_DRIVERPROTECTION_BITS
+{
+    struct
+    {
+        uint64_t PATIndex        : 5; // PATIndex
+        uint64_t Reserved        : 25;
+        uint64_t CacheableNoSnoop: 1;  // disregard OS's coherent request in UpdatePageTable
+        uint64_t CompressionEnReq: 1;  // C/NC request from UMD
+        uint64_t Reserved1       : 32; //DO NOT SET !! Reserved for OS Refer: D3DGPU_UNIQUE_DRIVER_PROTECTION
+    };
+    uint64_t Value;
+} GMM_DRIVERPROTECTION;
+
 #ifndef __GMM_KMD__
 typedef struct GMM_RESCREATE_CUSTOM_PARAMS_2_REC : public GMM_RESCREATE_CUSTOM_PARAMS
 {
@@ -383,6 +395,12 @@ typedef struct GMM_RESCREATE_CUSTOM_PARAMS_2_REC : public GMM_RESCREATE_CUSTOM_P
     uint64_t Reserved1;
 }GMM_RESCREATE_CUSTOM_PARAMS_2;
 #endif
+
+typedef struct GMM_OVERRIDE_VALUES_REC
+{
+    uint32_t Usage; // GMM_RESOURCE_USAGE_TYPE
+    uint8_t  CompressionDis;
+} GMM_OVERRIDE_VALUES;
 
 //===========================================================================
 // enum :
@@ -473,8 +491,9 @@ typedef enum
     GMM_MAIN_PLUS_AUX_SURF,  // Main surface plus auxilary data, includes ccs, cc, zcs, mcs metadata. Renderable portion of the surface.
     GMM_TOTAL_SURF,          // Main+Aux with additional padding based on hardware PageSize.
     GMM_MAPGPUVA_SIZE = GMM_TOTAL_SURF,// To be used for mapping gpu virtual address space.
+    GMM_TOTAL_SURF_PHYSICAL,
+    GMM_MAIN_SURF_PHYSICAL,
 } GMM_SIZE_PARAM;
-
 
 //===========================================================================
 // typedef:
@@ -529,6 +548,8 @@ typedef enum
     GMM_MAPPING_NULL = 0,
     GMM_MAPPING_LEGACY_Y_TO_STDSWIZZLE_SHAPE,
     GMM_MAPPING_GEN9_YS_TO_STDSWIZZLE,
+    GMM_MAPPING_YUVPLANAR,
+    GMM_MAPPING_YUVPLANAR_AUX,
 } GMM_GET_MAPPING_TYPE;
 
 typedef struct GMM_GET_MAPPING_REC
@@ -540,7 +561,7 @@ typedef struct GMM_GET_MAPPING_REC
         GMM_GFX_SIZE_T      VirtualOffset;
         GMM_GFX_SIZE_T      PhysicalOffset;
         GMM_GFX_SIZE_T      Size;
-    }                   Span, __NextSpan;
+    } Span, __NextSpan;
 
     struct
     {
@@ -553,11 +574,9 @@ typedef struct GMM_GET_MAPPING_REC
             GMM_GFX_SIZE_T      Physical, Virtual;
         }                   Slice0MipOffset, SlicePitch;
         uint32_t               EffectiveLodMax, Lod, Row, RowPitchVirtual, Rows, Slice, Slices;
-        GMM_YUV_PLANE       Plane, LastPlane;
+        GMM_YUV_PLANE Plane, LastPlane;
     }                   Scratch; // Zero on initial call to GmmResGetMappingSpanDesc and then let persist.
 } GMM_GET_MAPPING;
-
-
 //***************************************************************************
 //
 //                      GMM_RESOURCE_INFO API
@@ -671,9 +690,10 @@ GMM_GFX_SIZE_T      GMM_STDCALL GmmResGetPlanarGetXOffset(GMM_RESOURCE_INFO *pGm
 GMM_GFX_SIZE_T      GMM_STDCALL GmmResGetPlanarGetYOffset(GMM_RESOURCE_INFO *pGmmResource, GMM_YUV_PLANE Plane);
 GMM_GFX_SIZE_T      GMM_STDCALL GmmResGetPlanarAuxOffset(GMM_RESOURCE_INFO *pGmmResource, uint32_t ArrayIndex, GMM_UNIFIED_AUX_TYPE Plane);
 void                GMM_STDCALL GmmResSetLibContext(GMM_RESOURCE_INFO *pGmmResource, void *pLibContext);
-
+uint32_t            GMM_STDCALL GmmResIsMappedCompressible(GMM_RESOURCE_INFO *pGmmResource);
 // Remove when client moves to new interface
 uint32_t            GMM_STDCALL GmmResGetRenderSize(GMM_RESOURCE_INFO *pResourceInfo);
+uint8_t GMM_STDCALL GmmGetCompressionFormat(GMM_RESOURCE_FORMAT Format, GMM_LIB_CONTEXT *pGmmLibContext);
 
 //=====================================================================================================
 //forward declarations
@@ -724,7 +744,8 @@ uint32_t                    GMM_STDCALL GmmCachePolicyGetMaxSpecialMocsIndex(voi
 
 
 void                        GMM_STDCALL GmmResSetPrivateData(GMM_RESOURCE_INFO *pGmmResource, void *pPrivateData);
-
+uint32_t                    GMM_STDCALL GmmCachePolicyGetPATIndex(void *pLibContext, GMM_RESOURCE_USAGE_TYPE Usage, bool *pCompressionEnable, bool IsCpuCacheable);
+uint8_t                     GMM_STDCALL GmmGetSurfaceStateL2CachePolicy(void *pLibContext, GMM_RESOURCE_USAGE_TYPE Usage);
 #if (!defined(__GMM_KMD__) && !defined(GMM_UNIFIED_LIB))
 /////////////////////////////////////////////////////////////////////////////////////
 /// C wrapper functions for UMD clients Translation layer from OLD GMM APIs to New

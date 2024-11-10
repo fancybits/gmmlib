@@ -264,9 +264,8 @@ GmmLib::GMM_PAGETABLEPool *GmmLib::GmmPageTableMgr::__GetFreePoolNode(uint32_t *
     Pool = (PoolType == POOL_TYPE_TRTTL2) ? Pool : //1st pool reserved for TRTT-L2, since TRTT-L2 pruning not supported yet,
            (Pool ? Pool->GetNextPool() : NULL);    //other pools can be TR-L1/Aux-L1/Aux-L2 (and support dynamic pruning)
     TRTTPool      = (PoolType == POOL_TYPE_TRTTL2 || PoolType == POOL_TYPE_TRTTL1) ? true : false;
-    DWdivisor     = TRTTPool ? 8 * sizeof(uint32_t) : (PoolType == POOL_TYPE_AUXTTL2) ? 8 * sizeof(uint32_t) * AUX_L2TABLE_SIZE_IN_POOLNODES : 8 * sizeof(uint32_t) * AUX_L1TABLE_SIZE_IN_POOLNODES;
-    IdxMultiplier = TRTTPool ? 1 : (PoolType == POOL_TYPE_AUXTTL2) ? AUX_L2TABLE_SIZE_IN_POOLNODES : AUX_L1TABLE_SIZE_IN_POOLNODES;
-
+    DWdivisor     = TRTTPool ? 8 * sizeof(uint32_t) : (PoolType == POOL_TYPE_AUXTTL2) ? 8 * sizeof(uint32_t) * AUX_L2TABLE_SIZE_IN_POOLNODES : 8 * sizeof(uint32_t) * AUX_L1TABLE_SIZE_IN_POOLNODES_2(GetLibContext());
+    IdxMultiplier = TRTTPool ? 1 : (PoolType == POOL_TYPE_AUXTTL2) ? AUX_L2TABLE_SIZE_IN_POOLNODES : AUX_L1TABLE_SIZE_IN_POOLNODES_2(GetLibContext());
     //Scan existing PageTablePools for free pool node
     for(i = (PoolType == POOL_TYPE_TRTTL2) ? 0 : 1; Pool && i < NumNodePoolElements; i++)
     {
@@ -359,7 +358,7 @@ GmmLib::GmmPageTableMgr::GmmPageTableMgr(GMM_DEVICE_CALLBACKS_INT *DeviceCB, uin
            !pClientContextIn->GetSkuTable().FtrFlatPhysCCS)
         {
             __GMM_ASSERT(TTFlags & AUXTT); //Aux-TT is mandatory
-            ptr->AuxTTObj = new AuxTable();
+            ptr->AuxTTObj = new AuxTable(pClientContext);
             if(!ptr->AuxTTObj)
             {
                 goto ERROR_CASE;
@@ -523,7 +522,7 @@ GMM_STATUS GmmLib::GmmPageTableMgr::UpdateAuxTable(const GMM_DDI_UPDATEAUXTABLE 
             {
                 GMM_UNIFIED_AUX_TYPE AuxType = GMM_AUX_CCS;
                 AuxType                      = (UpdateReq->BaseResInfo->GetResFlags().Gpu.Depth && UpdateReq->BaseResInfo->GetResFlags().Gpu.CCS) ? GMM_AUX_ZCS : AuxType;
-                AuxVA                        = UpdateReq->BaseGpuVA + GmmResGetAuxSurfaceOffset(UpdateReq->BaseResInfo, AuxType);
+                AuxVA                        = UpdateReq->BaseGpuVA + GmmResGetAuxSurfaceOffset64(UpdateReq->BaseResInfo, AuxType);
             }
 
         }
@@ -542,7 +541,7 @@ GMM_STATUS GmmLib::GmmPageTableMgr::UpdateAuxTable(const GMM_DDI_UPDATEAUXTABLE 
                           GMM_AUX_ZCS :
                           AuxType;
 
-                AuxVA = UpdateReq->BaseGpuVA + GmmResGetAuxSurfaceOffset(UpdateReq->BaseResInfo, AuxType);
+                AuxVA = UpdateReq->BaseGpuVA + GmmResGetAuxSurfaceOffset64(UpdateReq->BaseResInfo, AuxType);
 
                 //For UV Packed, Gen12 e2e compr supported formats have 2 planes per surface
                 //Each has distinct Aux surface, Y-plane/UV-plane must be mapped to respective Y/UV Aux surface
@@ -556,7 +555,7 @@ GMM_STATUS GmmLib::GmmPageTableMgr::UpdateAuxTable(const GMM_DDI_UPDATEAUXTABLE 
                     UpdateReq->BaseResInfo->GetOffset(ReqInfo);
                     YPlaneSize = ReqInfo.Render.Offset64;
 
-                    UVAuxVA = UpdateReq->BaseGpuVA + GmmResGetAuxSurfaceOffset(UpdateReq->BaseResInfo, GMM_AUX_UV_CCS);
+                    UVAuxVA = UpdateReq->BaseGpuVA + GmmResGetAuxSurfaceOffset64(UpdateReq->BaseResInfo, GMM_AUX_UV_CCS);
                 }
             }
 

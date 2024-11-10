@@ -1,5 +1,5 @@
 /*==============================================================================
-Copyright(c) 2017 Intel Corporation
+Copyright(c) 2024 Intel Corporation
 
 Permission is hereby granted, free of charge, to any person obtaining a
 copy of this software and associated documentation files(the "Software"),
@@ -19,14 +19,20 @@ OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
 OTHER DEALINGS IN THE SOFTWARE.
 ============================================================================*/
+
 #pragma once
 
-// Helper Macros for CoherentPATIndex Value handling.
-#define CONCATENATE_COHERENT_PATINDEX(a, b) (((a & __BIT(0)) << 5) | b) // 'a' ->higher order bits 6th bit [5] MSB, 'b' -> Lower order 5 bits [4:0]
+#include "GmmGen12dGPUResourceULT.h"
 
-#define GET_COHERENT_PATINDEX_VALUE(pGmmLibContext, usage) (CONCATENATE_COHERENT_PATINDEX(pGmmLibContext->GetCachePolicyElement(usage).CoherentPATIndexHigherBit, \
-                                                                                          pGmmLibContext->GetCachePolicyElement(usage).CoherentPATIndex))
+class CTestXe2_LPGResource : public CTestGen12dGPUResource
+{
 
-#define GET_COHERENT_PATINDEX_LOWER_BITS(value) (value & (~(~0 << 5)))
+protected:
+    virtual void SetUp_Xe2Variant(PRODUCT_FAMILY platform);
+    virtual void TearDown_Xe2Variant();
+    virtual void TestMSAA();
 
-#define GET_COHERENT_PATINDEX_HIGHER_BIT(value) ((value >> 5) & __BIT(0))
+public:
+    static void SetUpTestCase();
+    static void TearDownTestCase();
+};

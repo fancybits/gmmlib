@@ -30,8 +30,10 @@ set(GMMULT_HEADERS
      GmmGen11ResourceULT.h
      GmmGen12ResourceULT.h
      GmmGen12dGPUResourceULT.h
+     GmmXe2_LPGResourceULT.h
      GmmGen12CachePolicyULT.h
      GmmGen12dGPUCachePolicyULT.h
+     GmmXe_LPGCachePolicyULT.h
      GmmGen9CachePolicyULT.h
      GmmGen9ResourceULT.h
      GmmResourceULT.h
@@ -49,9 +51,11 @@ set(GMMULT_SOURCES
     GmmGen11CachePolicyULT.cpp
     GmmGen12CachePolicyULT.cpp
     GmmGen12dGPUCachePolicyULT.cpp
+    GmmXe_LPGCachePolicyULT.cpp
     GmmGen11ResourceULT.cpp
     GmmGen12ResourceULT.cpp
     GmmGen12dGPUResourceULT.cpp
+    GmmXe2_LPGResourceULT.cpp    
     GmmGen9CachePolicyULT.cpp
     GmmGen9ResourceULT.cpp
     GmmResourceCpuBltULT.cpp
@@ -68,13 +72,15 @@ source_group("Source Files\\Cache Policy" FILES
             GmmGen11CachePolicyULT.cpp
             GmmGen12CachePolicyULT.cpp
             GmmGen12dGPUCachePolicyULT.cpp
-            )
+            GmmXe_LPGCachePolicyULT.cpp
+	    )
 
 source_group("Source Files\\Resource" FILES
             GmmGen10ResourceULT.cpp
             GmmGen11ResourceULT.cpp
             GmmGen12ResourceULT.cpp
             GmmGen12dGPUResourceULT.cpp
+            GmmXe2_LPGResourceULT.cpp
             GmmGen9ResourceULT.cpp
             GmmResourceCpuBltULT.cpp
             GmmResourceULT.cpp
@@ -97,7 +103,8 @@ source_group("Header Files\\Cache Policy" FILES
              GmmGen10CachePolicyULT.h
              GmmGen11CachePolicyULT.h
              GmmGen12CachePolicyULT.h
-             GmmGen12dGPUCachePolicyULT.h
+             GmmXe_LPGCachePolicyULT.h
+	     GmmGen12dGPUCachePolicyULT.h
              GmmGen9CachePolicyULT.h
             )
 
@@ -106,6 +113,7 @@ source_group("Header Files\\Resource" FILES
              GmmGen11ResourceULT.h
              GmmGen12ResourceULT.h
              GmmGen12dGPUResourceULT.h
+             GmmXe2_LPGResourceULT.h	     
              GmmGen9ResourceULT.h
              GmmResourceULT.h
             )
@@ -166,4 +174,9 @@ add_custom_command(
     POST_BUILD
     COMMAND echo running ULTs
     COMMAND "${CMAKE_COMMAND}" -E env "LD_LIBRARY_PATH=$<TARGET_FILE_DIR:igfx_gmmumd_dll>" ${CMAKE_CFG_INTDIR}/${EXE_NAME} --gtest_filter=CTest*
+)
+
+add_test(
+    NAME ULT
+    COMMAND env "LD_LIBRARY_PATH=$<TARGET_FILE_DIR:igfx_gmmumd_dll>" $<TARGET_FILE:${EXE_NAME}> --gtest_filter=CTest*
 )

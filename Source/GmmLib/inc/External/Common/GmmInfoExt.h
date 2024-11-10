@@ -39,7 +39,6 @@ extern "C" {
 void GMM_STDCALL GmmGetCacheSizes(GMM_LIB_CONTEXT *pGmmLibContext, GMM_CACHE_SIZES *CacheSizes);
 
 const GMM_PLATFORM_INFO* GMM_STDCALL GmmGetPlatformInfo(GMM_GLOBAL_CONTEXT* pGmmLibContext);
-
 // Reset packing alignment to project default
 #pragma pack(pop)
 

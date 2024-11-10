@@ -40,7 +40,7 @@ GMM_STATUS GmmLib::GmmGen10CachePolicy::InitCachePolicy()
 
     __GMM_ASSERTPTR(pCachePolicy, GMM_ERROR);
 
-#define DEFINE_CACHE_ELEMENT(usage, llc, ellc, l3, wt, age, lecc_scc, l3_scc, sso, cos, hdcl1) DEFINE_CP_ELEMENT(usage, llc, ellc, l3, wt, age, 0, lecc_scc, l3_scc, 0, sso, cos, hdcl1, 0, 0, 0, 0, 0)
+#define DEFINE_CACHE_ELEMENT(usage, llc, ellc, l3, wt, age, lecc_scc, l3_scc, sso, cos, hdcl1) DEFINE_CP_ELEMENT(usage, llc, ellc, l3, wt, age, 0, lecc_scc, l3_scc, 0, sso, cos, hdcl1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 #include "GmmGen10CachePolicy.h"
 
 #define TC_LLC (1)
@@ -295,7 +295,7 @@ uint32_t GmmLib::GmmGen10CachePolicy::BestMatchingPATIdx(GMM_CACHE_POLICY_ELEMEN
         WantedTC = GMM_GFX_TC_ELLC_ONLY; // Note: this overrides the MOCS target cache selection.
     }
 
-    for(i = 1; i < GMM_NUM_PAT_ENTRIES; i++)
+    for(i = 1; i < NumPATRegisters; i++)
     {
         GMM_PRIVATE_PAT PAT1 = GetPrivatePATEntry(PATIdx);
         GMM_PRIVATE_PAT PAT2 = GetPrivatePATEntry(i);
@@ -359,7 +359,7 @@ GMM_STATUS GmmLib::GmmGen10CachePolicy::SetupPAT()
     }
 
     // Set values for GmmGlobalInfo PrivatePATTable
-    for(i = 0; i < GMM_NUM_PAT_ENTRIES; i++)
+    for(i = 0; i < NumPATRegisters; i++)
     {
         GMM_PRIVATE_PAT PAT = {0};
 

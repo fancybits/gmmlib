@@ -46,6 +46,7 @@ void CTestGen12dGPUResource::SetUpTestCase()
         pGfxAdapterInfo->SkuTable.FtrLinearCCS             = 1; //legacy y =>0 - test both
         pGfxAdapterInfo->SkuTable.FtrStandardMipTailFormat = 1;
         pGfxAdapterInfo->SkuTable.FtrTileY                 = 1;
+        pGfxAdapterInfo->SkuTable.FtrTile64Optimization    = 1;
 	CommonULT::SetUpTestCase();
     }
 }
@@ -452,8 +453,6 @@ TEST_F(CTestGen12dGPUResource, DISABLED_Test2DTile64MippedResourceOptimization)
         uint32_t Mip1Height    = 0;
         uint32_t Mip2Height    = 0;
         uint32_t Mip3Height    = 0;
-        uint32_t Mip4Height    = 0;
-        uint32_t Mip5Height    = 0;
         uint32_t Mip2Higher    = 0; // Sum of aligned heights of Mip2 and above
         uint32_t MipTailHeight = 0;
         // Haligned Mip Widths
@@ -2455,8 +2454,6 @@ TEST_F(CTestGen12dGPUResource, DISABLED_Test2DTileYfMippedCompressedResource)
         uint32_t Mip1Height    = 0;
         uint32_t Mip2Height    = 0;
         uint32_t Mip3Height    = 0;
-        uint32_t Mip4Height    = 0;
-        uint32_t Mip5Height    = 0;
         uint32_t Mip2Higher    = 0; // Sum of aligned heights of Mip2 and above
         uint32_t MipTailHeight = 0;
         // Haligned Mip Widths
@@ -3144,7 +3141,7 @@ TEST_F(CTestGen12dGPUResource, DISABLED_TestColorMSAA)
     uint32_t HAlign, VAlign, TileDimX, TileDimY, MCSHAlign, MCSVAlign, TileSize;
     uint32_t ExpectedMCSBpp;
     std::vector<tuple<int, int, int, bool, int, int>> List; //TEST_TILE_TYPE, TEST_BPP, TEST_RESOURCE_TYPE, Depth or RT, TestDimension index, ArraySize
-    auto Size = BuildInputIterator(List, 4, 2);             // Size of arrays TestDimensions, TestArraySize
+    auto Size = BuildInputIterator(List, 4, 2, false);      // Size of arrays TestDimensions, TestArraySize
 
     for(auto element : List)
     {
@@ -3222,4 +3219,36 @@ TEST_F(CTestGen12dGPUResource, DISABLED_TestColorMSAA)
     }     //Iterate through all Input types
 
     //Mip-mapped, MSAA case:
+}
+/// @brief ULT for auto-tile selction in Gmm.
+TEST_F(CTestGen12dGPUResource, Test2DMippedResourceAutoTiling)
+{
+    GMM_RESCREATE_PARAMS gmmParams = {};
+    gmmParams.Type                 = RESOURCE_2D;
+    gmmParams.NoGfxMemory          = 1;
+    gmmParams.Flags.Gpu.Texture    = 1;
+    gmmParams.MaxLod               = 5;
+    gmmParams.ArraySize            = 4;
+
+    for(uint32_t i = 0; i < TEST_BPP_MAX; i++)
+    {
+        TEST_BPP bpp          = static_cast<TEST_BPP>(i);
+        gmmParams.Format      = SetResourceFormat(bpp);
+        gmmParams.BaseWidth64 = 0x120;
+        gmmParams.BaseHeight  = 0x120;
+
+        GMM_RESOURCE_INFO *ResourceInfo;
+        ResourceInfo = pGmmULTClientContext->CreateResInfoObject(&gmmParams);
+
+        GMM_RESOURCE_INFO *ResourceInfo2;
+        ResourceInfo2 = pGmmULTClientContext->CreateResInfoObject(&gmmParams);
+
+        //Verify Gmm tile-selection able to get same tiling mode for resources created with same GmmParams
+        //... where 1st iteration uses auto-tile-selection, and next creates with previouly selected tile-mode.
+        //Below ensures, Gmm modified gmmParams to final tile-mode, or left it at initial (no tiling selection).
+        EXPECT_EQ(ResourceInfo->GmmGetTileMode(), ResourceInfo2->GmmGetTileMode());
+
+        pGmmULTClientContext->DestroyResInfoObject(ResourceInfo);
+        pGmmULTClientContext->DestroyResInfoObject(ResourceInfo2);
+    }
 }

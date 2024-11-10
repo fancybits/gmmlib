@@ -155,7 +155,7 @@ namespace GmmLib
                 MultiTileArch()
             {
                 pClientContext = pClientContextIn;
-            }
+			}
 #endif
 
             GmmResourceInfoCommon& operator=(const GmmResourceInfoCommon& rhs)
@@ -208,6 +208,7 @@ namespace GmmLib
             GMM_VIRTUAL uint32_t                GMM_STDCALL GetFastClearHeight(uint32_t MipLevel);
 
 
+
             /* inline functions */
 
 #ifndef __GMM_KMD__
@@ -229,6 +230,7 @@ namespace GmmLib
                 pClientContext = pGmmClientContext;
                 GET_GMM_CLIENT_TYPE(pGmmClientContext, ClientType);
             }
+
 #endif
 
 
@@ -293,14 +295,14 @@ namespace GmmLib
             /////////////////////////////////////////////////////////////////////////////////////
             GMM_INLINE_VIRTUAL GMM_INLINE_EXPORTED void* GMM_STDCALL GetSystemMemPointer(uint8_t IsD3DDdiAllocation)
             {
-                if (IsD3DDdiAllocation)
-                {
-                    return (void *)GMM_GFX_ADDRESS_CANONIZE(ExistingSysMem.pGfxAlignedVirtAddress);
-                }
-                else
-                {
-                    return (void *)GMM_GFX_ADDRESS_CANONIZE(ExistingSysMem.pVirtAddress);
-                }
+	        if (IsD3DDdiAllocation)
+	        {
+		    return (void *)GMM_GFX_ADDRESS_CANONIZE(ExistingSysMem.pGfxAlignedVirtAddress);
+	        }
+	        else
+	        {
+		    return (void *)GMM_GFX_ADDRESS_CANONIZE(ExistingSysMem.pVirtAddress);
+		}
             }
 
             /////////////////////////////////////////////////////////////////////////////////////
@@ -356,6 +358,7 @@ namespace GmmLib
             {
                 return Surf.BaseHeight;
             }
+
 
             /////////////////////////////////////////////////////////////////////////////////////
             /// Returns the resource depth
@@ -512,12 +515,42 @@ namespace GmmLib
                         switch (Surf.MSAA.NumSamples)
                         {
                             case 2:
+			                    MSAASpecialFactorForDepthAndStencil = 2;
+			                    if (GetGmmLibContext()->GetSkuTable().FtrXe2PlusTiling && (Surf.BitsPerPixel == 128))
+			                    {
+			                        MSAASpecialFactorForDepthAndStencil = 1;
+			                    }
+			                    break;
                             case 4:
                                 MSAASpecialFactorForDepthAndStencil = 2;
                                 break;
                             case 8:
+			                    MSAASpecialFactorForDepthAndStencil = 4;
+			                    if (GetGmmLibContext()->GetSkuTable().FtrXe2PlusTiling)
+			                    {
+			                        if (Surf.BitsPerPixel == 32 || Surf.BitsPerPixel == 8)
+			                        {
+			                            MSAASpecialFactorForDepthAndStencil = 2;
+			                        }
+			                    }
+			                    else if (!GetGmmLibContext()->GetSkuTable().FtrTileY && !GetGmmLibContext()->GetSkuTable().FtrXe2PlusTiling)
+			                    {
+			                        MSAASpecialFactorForDepthAndStencil = 2; // same as 4X
+			                    }
+			                    break;
                             case 16:
                                 MSAASpecialFactorForDepthAndStencil = 4;
+			                    if (GetGmmLibContext()->GetSkuTable().FtrXe2PlusTiling)
+			                    {
+			                        if (Surf.BitsPerPixel == 64)
+			                        {
+			                            MSAASpecialFactorForDepthAndStencil = 8;
+			                        }
+			                    }
+			                    else if (!GetGmmLibContext()->GetSkuTable().FtrTileY && !GetGmmLibContext()->GetSkuTable().FtrXe2PlusTiling)
+			                    {
+			                        MSAASpecialFactorForDepthAndStencil = 2; // same as 4X
+			                    }
                                 break;
                             default:
                                 break;
@@ -683,6 +716,7 @@ namespace GmmLib
             GMM_INLINE_VIRTUAL GMM_INLINE_EXPORTED void GMM_STDCALL SetMmcMode(GMM_RESOURCE_MMC_INFO Mode, uint32_t ArrayIndex)
             {
                 __GMM_ASSERT((Mode == GMM_MMC_DISABLED) || (Mode == GMM_MMC_HORIZONTAL) || (Mode == GMM_MMC_VERTICAL));
+                
                 __GMM_ASSERT(ArrayIndex < GMM_MAX_MMC_INDEX);
 
                 if (ArrayIndex < GMM_MAX_MMC_INDEX)
@@ -947,14 +981,14 @@ namespace GmmLib
             GMM_INLINE_VIRTUAL GMM_INLINE_EXPORTED GMM_GFX_ADDRESS GMM_STDCALL GetGfxAddress()
             {
                 // Support for Sparse/Tiled resources will be unified in later
-                if (SvmAddress)
-                {
+	        if (SvmAddress)
+	        {
                     return GMM_GFX_ADDRESS_CANONIZE(SvmAddress);
-                }
-                else
-                {
-                    return 0;
-                }
+		}
+	        else
+	        {
+	            return 0;
+	        }
             }
 
             /////////////////////////////////////////////////////////////////////////////////////
@@ -988,6 +1022,7 @@ namespace GmmLib
             GMM_INLINE_VIRTUAL GMM_INLINE_EXPORTED GMM_GFX_SIZE_T  GMM_STDCALL GetSize(GMM_SIZE_PARAM GmmSizeParam)
             {
                 GMM_GFX_SIZE_T Size = 0;
+
                 switch (GmmSizeParam)
                 {
                     case GMM_MAIN_SURF:
@@ -1003,6 +1038,31 @@ namespace GmmLib
                             Size = GFX_ALIGN(Surf.Size + AuxSurf.Size + AuxSecSurf.Size, GMM_KBYTE(64));
                         }
                         break;
+                    case GMM_TOTAL_SURF_PHYSICAL:
+                        if(GMM_IS_PLANAR(Surf.Format) && Is1MBAlignedAuxTPlanarSurface())
+                        {
+                            Size = (Surf.OffsetInfo.PlaneXe_LPG.Physical.Height[GMM_PLANE_Y] + Surf.OffsetInfo.PlaneXe_LPG.Physical.Height[GMM_PLANE_U] + Surf.OffsetInfo.PlaneXe_LPG.Physical.Height[GMM_PLANE_V]) * Surf.OffsetInfo.PlaneXe_LPG.PhysicalPitch;
+                            Size *= GFX_MAX(Surf.ArraySize, 1);
+                            Size += AuxSurf.Size + AuxSecSurf.Size;
+                        }
+                        else
+                        {
+                            // Physical Size = VA Size
+                            Size = GetSize(GMM_TOTAL_SURF);
+                        }
+                        break;
+                    case GMM_MAIN_SURF_PHYSICAL:
+                        if(GMM_IS_PLANAR(Surf.Format) && Is1MBAlignedAuxTPlanarSurface())
+                        {
+                            Size = (Surf.OffsetInfo.PlaneXe_LPG.Physical.Height[GMM_PLANE_Y] + Surf.OffsetInfo.PlaneXe_LPG.Physical.Height[GMM_PLANE_U] + Surf.OffsetInfo.PlaneXe_LPG.Physical.Height[GMM_PLANE_V]) * Surf.OffsetInfo.PlaneXe_LPG.PhysicalPitch;
+                            Size *= GFX_MAX(Surf.ArraySize, 1);
+                        }
+                        else
+                        {
+                            // Physical Size = VA Size
+                            Size = GetSize(GMM_MAIN_SURF);
+                        }
+                        break;			
                     default:
                         __GMM_ASSERT(0);
                 }
@@ -1017,8 +1077,8 @@ namespace GmmLib
             {
                 return Surf.Size;
             }
-
-            /////////////////////////////////////////////////////////////////////////////////////
+            
+	    /////////////////////////////////////////////////////////////////////////////////////
             /// Returns the number of bytes that are required to back this padded and aligned
             /// resource. The calculation takes into consideration more than simply width
             /// height and bits per pixel. Width padding (stride), pixel formats, inter-plane
@@ -1100,6 +1160,13 @@ namespace GmmLib
                     else if ((GmmAuxType == GMM_AUX_CC) && (Surf.Flags.Gpu.IndirectClearColor || Surf.Flags.Gpu.ColorDiscard))
                     {
                         Offset = Surf.Size + AuxSurf.UnpaddedSize;
+	                if (GetGmmLibContext()->GetSkuTable().FtrXe2Compression)
+	                {
+	                    if (Surf.MSAA.NumSamples > 1)
+	                    {
+	                        Offset = Surf.Size; // Beginning of MCS which is first 4K of AuxSurf, Clear colour is stored only for MSAA surfaces
+	                    }
+	                }
                     }
                     else if (GmmAuxType == GMM_AUX_COMP_STATE)
                     {
@@ -1181,7 +1248,22 @@ namespace GmmLib
                     }
                     else
                     {
-                        return (AuxSurf.CCSize);
+                    
+                        if (GetGmmLibContext()->GetSkuTable().FtrXe2Compression)
+                        {
+                            if (Surf.MSAA.NumSamples > 1)
+                            {
+                                return (AuxSurf.UnpaddedSize); // CC is part of MCS
+                            }
+                            else
+                            {
+                                return 0; // fixed CC values used, not stored as part of Aux
+                            }
+                        }
+                        else
+                        {
+                            return (AuxSurf.CCSize);
+                        }										
                     }
                 }
                 else if (GmmAuxType == GMM_AUX_ZCS)
@@ -1385,10 +1467,17 @@ namespace GmmLib
                         {
                             switch (GetHAlign())
                             {
-                                case 4:  HAlign = 1; break;
-                                case 8:  HAlign = 2; break;
-                                case 16: HAlign = 3; break;
-                                default: HAlign = 1; // TODO(Benign): Change back to 0 + assert after packed YUV handling corrected.
+			                case 4:
+			                    HAlign = 1;
+			                    break;
+			                case 8:
+			                    HAlign = 2;
+			                    break;
+			                case 16:
+			                    HAlign = 3;
+			                    break;
+			                default:
+			                    HAlign = 1; // Change back to 0 + assert after packed YUV handling corrected.
                             }
                         }
                         else
@@ -1400,26 +1489,43 @@ namespace GmmLib
                                 Align = GetHAlign();
                             }
 
-                            switch (Align)
-                            {
-                                case  16:  HAlign = 0; break;
-                                case  32:  HAlign = 1; break;
-                                case  64:  HAlign = 2; break;
-                                case 128:  HAlign = 3; break;
-                                default:   HAlign = 0; __GMM_ASSERT(0);
+		                    switch (Align)
+		                    {
+		                    case 16:
+		                        HAlign = 0;
+		                        break;
+		                    case 32:
+		                        HAlign = 1;
+		                        break;
+		                    case 64:
+		                        HAlign = 2;
+		                        break;
+		                    case 128:
+                            case 256:
+		                        HAlign = 3;
+		                        break;
+		                    default:
+		                        HAlign = 0;
+		                        __GMM_ASSERT(0);
                             }
-                        }
-                    }
                 }
-                else
-                {
-                    switch (Surf.Alignment.HAlign)
-                    {
-                        case 4:  HAlign = 0; break;
-                        case 8:  HAlign = 1; break;
-                        default: HAlign = 0; __GMM_ASSERT(0);
-                    }
-                }
+            }
+        }
+        else
+        {
+            switch (Surf.Alignment.HAlign)
+            {
+            case 4:
+                HAlign = 0;
+                break;
+            case 8:
+                HAlign = 1;
+                break;
+            default:
+                HAlign = 0;
+                __GMM_ASSERT(0);
+            }
+        }
 
                 return HAlign;
             }
@@ -1445,10 +1551,17 @@ namespace GmmLib
                     {
                         switch (GetVAlign())
                         {
-                            case 4:  VAlign = 1; break;
-                            case 8:  VAlign = 2; break;
-                            case 16: VAlign = 3; break;
-                            default: VAlign = 1;
+		                case 4:
+		                    VAlign = 1;
+		                    break;
+		                case 8:
+		                    VAlign = 2;
+		                    break;
+		                case 16:
+		                    VAlign = 3;
+		                    break;
+		                default:
+		                    VAlign = 1;
                         }
                     }
                 }
@@ -1456,9 +1569,15 @@ namespace GmmLib
                 {
                     switch (Surf.Alignment.VAlign)
                     {
-                        case 2:  VAlign = 0; break;
-                        case 4:  VAlign = 1; break;
-                        default: VAlign = 0; __GMM_ASSERT(0);
+		            case 2:
+		                VAlign = 0;
+		                break;
+		            case 4:
+		                VAlign = 1;
+		                break;
+		            default:
+		                VAlign = 0;
+		                __GMM_ASSERT(0);
                     }
                 }
 
@@ -1803,23 +1922,25 @@ namespace GmmLib
             {
                 const GMM_CACHE_POLICY_ELEMENT *CachePolicy = GetGmmLibContext()->GetCachePolicyUsage();
 
-                __GMM_ASSERT(CachePolicy[GetCachePolicyUsage()].Initialized);
+            GMM_RESOURCE_USAGE_TYPE Usage = GetCachePolicyUsage();
+
+		        __GMM_ASSERT(CachePolicy[Usage].Initialized);
 
                 // Prevent wrong Usage for XAdapter resources. UMD does not call GetMemoryObject on shader resources but,
                 // when they add it someone could call it without knowing the restriction.
                 if(Surf.Flags.Info.XAdapter &&
-                   GetCachePolicyUsage() != GMM_RESOURCE_USAGE_XADAPTER_SHARED_RESOURCE)
+                   (Usage != GMM_RESOURCE_USAGE_XADAPTER_SHARED_RESOURCE))
                 {
                     __GMM_ASSERT(false);
                 }
 
-                if((CachePolicy[GetCachePolicyUsage()].Override & CachePolicy[GetCachePolicyUsage()].IDCode) ||
-                   (CachePolicy[GetCachePolicyUsage()].Override == ALWAYS_OVERRIDE))
+                if((CachePolicy[Usage].Override & CachePolicy[Usage].IDCode) ||
+                   (CachePolicy[Usage].Override == ALWAYS_OVERRIDE))
                 {
-                    return CachePolicy[GetCachePolicyUsage()].MemoryObjectOverride;
+                    return CachePolicy[Usage].MemoryObjectOverride;
                 }
 
-                return CachePolicy[GetCachePolicyUsage()].MemoryObjectNoOverride;
+                return CachePolicy[Usage].MemoryObjectNoOverride;
             }
 
             /////////////////////////////////////////////////////////////////////////////////////
@@ -1856,8 +1977,8 @@ namespace GmmLib
             {
                 return MultiTileArch;
             }
-
-            /////////////////////////////////////////////////////////////////////////////////////
+	    
+	    /////////////////////////////////////////////////////////////////////////////////////
             /// Returns the Flat Phys CCS Size for the resource
             /// @return     CCS size in bytes
             /////////////////////////////////////////////////////////////////////////////////////
@@ -1868,8 +1989,15 @@ namespace GmmLib
                         Surf.Flags.Info.ExistingSysMem ||
                         Surf.Flags.Info.NonLocalOnly))
                 {
-                    return GFX_CEIL_DIV(Surf.Size, 256);
-                }
+		    if (GetGmmLibContext()->GetSkuTable().FtrXe2Compression)
+		    {
+			return GFX_CEIL_DIV(Surf.Size, 512);
+		    }
+		    else
+		    {
+			return GFX_CEIL_DIV(Surf.Size, 256);
+		    }
+		}
                 return 0;
             }
 			/////////////////////////////////////////////////////////////////////////////////////
@@ -1921,6 +2049,130 @@ namespace GmmLib
             GMM_VIRTUAL GMM_STATUS GMM_STDCALL CreateCustomRes_2(Context &GmmLibContext, GMM_RESCREATE_CUSTOM_PARAMS_2 &CreateParams);
 #endif
 
+            /////////////////////////////////////////////////////////////////////////////////////
+            /// Returns physical size of the main surface only. Aux surface size not included.
+            /// @return     Physical Size of main surface
+            /////////////////////////////////////////////////////////////////////////////////////	    
+	    GMM_INLINE_VIRTUAL GMM_INLINE_EXPORTED GMM_GFX_SIZE_T GMM_STDCALL GetSizeMainSurfacePhysical()
+            {
+                GMM_GFX_SIZE_T Size;
+                if(GMM_IS_PLANAR(Surf.Format) && Is1MBAlignedAuxTPlanarSurface())
+                {
+                    Size = ((Surf.OffsetInfo.PlaneXe_LPG.Physical.Height[GMM_PLANE_Y] + Surf.OffsetInfo.PlaneXe_LPG.Physical.Height[GMM_PLANE_U] + Surf.OffsetInfo.PlaneXe_LPG.Physical.Height[GMM_PLANE_V]) * Surf.OffsetInfo.PlaneXe_LPG.PhysicalPitch);
+                    Size *= GFX_MAX(Surf.ArraySize, 1);
+                }
+                else
+                {
+                    // Physical Size = VA Size
+                    Size = GetSizeMainSurface();
+                }
+                return Size;
+            }
+
+            /////////////////////////////////////////////////////////////////////////////////////
+            /// Returns total physical size of surface.
+            /// @return     Surface Size
+            /////////////////////////////////////////////////////////////////////////////////////	    
+            GMM_INLINE_VIRTUAL GMM_INLINE_EXPORTED GMM_GFX_SIZE_T GMM_STDCALL GetSizeSurfacePhysical()
+            {
+                GMM_GFX_SIZE_T Size;
+                if(GMM_IS_PLANAR(Surf.Format) && Is1MBAlignedAuxTPlanarSurface())
+                {
+                    Size = (Surf.OffsetInfo.PlaneXe_LPG.Physical.Height[GMM_PLANE_Y] + Surf.OffsetInfo.PlaneXe_LPG.Physical.Height[GMM_PLANE_U] + Surf.OffsetInfo.PlaneXe_LPG.Physical.Height[GMM_PLANE_V]) * Surf.OffsetInfo.PlaneXe_LPG.PhysicalPitch;
+                    Size *= GFX_MAX(Surf.ArraySize, 1);
+                    Size += AuxSurf.Size + AuxSecSurf.Size;
+                }
+                else
+                {
+                    // Physical Size = VA Size
+                    Size = GetSizeSurface();
+                };
+                return Size;
+            }
+
+            /////////////////////////////////////////////////////////////////////////////////////
+            /// Returns if a resource is 1MB aligned AuxT enabled planar surface
+            /// @return              Is1MBAuxTAlignedPlanes Flag
+
+            /////////////////////////////////////////////////////////////////////////////////////
+            GMM_INLINE_VIRTUAL GMM_INLINE_EXPORTED uint32_t GMM_STDCALL Is1MBAlignedAuxTPlanarSurface()
+            {
+	        const GMM_PLATFORM_INFO *pPlatform = (GMM_PLATFORM_INFO *)GMM_OVERRIDE_EXPORTED_PLATFORM_INFO(&Surf, GetGmmLibContext());
+		
+	        if(GMM_IS_1MB_AUX_TILEALIGNEDPLANES(pPlatform->Platform, Surf))
+	        {
+	            return Surf.OffsetInfo.PlaneXe_LPG.Is1MBAuxTAlignedPlanes;
+	        }
+		
+	        return 0;          
+            }
+
+            GMM_INLINE_VIRTUAL GMM_INLINE_EXPORTED uint32_t GMM_STDCALL IsResourceMappedCompressible()
+            {
+                uint32_t CompressedRes = 0;
+                if (GetGmmLibContext()->GetSkuTable().FtrXe2Compression)
+                {
+                    CompressedRes = !Surf.Flags.Info.NotCompressed;
+                }
+                else
+                {
+                    CompressedRes = Surf.Flags.Info.RenderCompressed || Surf.Flags.Info.MediaCompressed;
+                }
+
+                return CompressedRes;
+            }
+			
+	    /////////////////////////////////////////////////////////////////////////////////////
+	    /// Returns true for displayable resources
+	    /// @return
+	    /////////////////////////////////////////////////////////////////////////////////////
+	    GMM_INLINE_VIRTUAL GMM_INLINE_EXPORTED bool GMM_STDCALL IsDisplayable()
+	    {
+	        return ((Surf.Type == RESOURCE_PRIMARY) || (Surf.Type == RESOURCE_CURSOR) || Surf.Flags.Gpu.FlipChain || Surf.Flags.Gpu.Overlay);
+	    }
+						
+	    GMM_INLINE_VIRTUAL GMM_INLINE_EXPORTED uint64_t GMM_STDCALL GetDriverProtectionBits(GMM_OVERRIDE_VALUES OverrideData)
+	    {
+	        GMM_DRIVERPROTECTION     DriverProtection = {{0}};
+	        const GMM_PLATFORM_INFO *pPlatform;
+	        GMM_RESOURCE_USAGE_TYPE  Usage;
+
+	        pPlatform = (GMM_PLATFORM_INFO *)GMM_OVERRIDE_EXPORTED_PLATFORM_INFO(&Surf, GetGmmLibContext());
+	        if (GFX_GET_CURRENT_PRODUCT(pPlatform->Platform) < IGFX_PVC)
+	        {
+	            return 0;
+	        }
+	        Usage = Surf.CachePolicy.Usage;
+	        if ((OverrideData.Usage > GMM_RESOURCE_USAGE_UNKNOWN) && (OverrideData.Usage < GMM_RESOURCE_USAGE_MAX)) 
+	        {
+	            Usage = (GMM_RESOURCE_USAGE_TYPE)OverrideData.Usage;
+	        }
+	        if (GetGmmLibContext()->GetSkuTable().FtrXe2Compression)
+	        {
+	            if (OverrideData.CompressionDis)
+	            {
+	                DriverProtection.CompressionEnReq = 0;
+	            }
+	            else
+	            {
+
+	                DriverProtection.CompressionEnReq = !Surf.Flags.Info.NotCompressed;
+	            }
+	        }
+
+	        bool IscompressionEn              = DriverProtection.CompressionEnReq ? true : false;
+	        DriverProtection.CacheableNoSnoop = false;
+
+	        DriverProtection.PATIndex = GetGmmLibContext()->GetCachePolicyObj()->CachePolicyGetPATIndex(NULL, Usage, &IscompressionEn, (bool)(Surf.Flags.Info.Cacheable));
+
+	        DriverProtection.CompressionEnReq = IscompressionEn ? true : false;
+
+	        return DriverProtection.Value;
+	    }
+	    
+	    GMM_VIRTUAL uint64_t GMM_STDCALL       Get2DFastClearSurfaceWidthFor3DSurface(uint32_t MipLevel);
+	    GMM_VIRTUAL uint64_t GMM_STDCALL       Get2DFastClearSurfaceHeightFor3DSurface(uint32_t MipLevel);
+		
     };
 
 } // namespace GmmLib

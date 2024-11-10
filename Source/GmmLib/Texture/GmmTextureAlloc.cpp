@@ -33,6 +33,8 @@ void GmmLib::GmmTextureCalc::SetTileMode(GMM_TEXTURE_INFO *pTexInfo)
     const GMM_PLATFORM_INFO *pPlatform;
 
     pPlatform = GMM_OVERRIDE_PLATFORM_INFO(pTexInfo, pGmmLibContext);
+    
+    pTexInfo->TileMode = TILE_NONE;
 
     if(pTexInfo->Flags.Info.TiledYf || GMM_IS_64KB_TILE(pTexInfo->Flags))
     {
@@ -102,7 +104,14 @@ void GmmLib::GmmTextureCalc::SetTileMode(GMM_TEXTURE_INFO *pTexInfo)
             }
             else
             {
-                GENERATE_TILE_MODE(_64, 1D, 2D, 2D_2X, 2D_4X, 2D_4X, 2D_4X, 3D);
+                if (pGmmLibContext->GetSkuTable().FtrXe2PlusTiling)
+                {
+                    GENERATE_TILE_MODE(_64, 1D, 2D, 2D_2X, 2D_4X, 2D_8X, 2D_16X, 3D);
+                }
+                else
+                {
+                    GENERATE_TILE_MODE(_64, 1D, 2D, 2D_2X, 2D_4X, 2D_4X, 2D_4X, 3D);
+                }
             }
 
             pTexInfo->Flags.Info.TiledYf = 0;
@@ -161,6 +170,8 @@ void GmmLib::GmmTextureCalc::SetTileMode(GMM_TEXTURE_INFO *pTexInfo)
     {
         GMM_ASSERTDPF(0, "No tiling preference set!");
     }
+    
+    GMM_ASSERTDPF(pTexInfo->TileMode < GMM_TILE_MODES, "Invalid Tile Mode Set");
 }
 
 /////////////////////////////////////////////////////////////////////////////////////
@@ -584,6 +595,11 @@ GMM_STATUS GmmLib::GmmTextureCalc::FillTexPitchAndSize(GMM_TEXTURE_INFO * pTexIn
         }
     }
 
+    if((GFX_GET_CURRENT_PRODUCT(pPlatform->Platform) >= IGFX_METEORLAKE))
+    {
+        pTexInfo->OffsetInfo.PlaneXe_LPG.PhysicalPitch = pTexInfo->Pitch;
+    }
+
     { // Surface Sizes
         int64_t Size;
 
@@ -705,7 +721,7 @@ GMM_STATUS GmmLib::GmmTextureCalc::FillTexPitchAndSize(GMM_TEXTURE_INFO * pTexIn
                 else
                 {
                     //XeHP, DG2
-                    if((pTexInfo->MSAA.NumSamples == 8 || pTexInfo->MSAA.NumSamples == 16))
+                    if (!pGmmLibContext->GetSkuTable().FtrXe2PlusTiling && (pTexInfo->MSAA.NumSamples == 8 || pTexInfo->MSAA.NumSamples == 16))
                     {
                         uint64_t SliceSize = pTexInfo->Pitch * Height;
                         SliceSize *= 4; // multiple by samples per tile
@@ -722,6 +738,13 @@ GMM_STATUS GmmLib::GmmTextureCalc::FillTexPitchAndSize(GMM_TEXTURE_INFO * pTexIn
             {
                 //Pad align surface to 64KB ie Tile size
                 Size = GFX_ALIGN(Size, GMM_KBYTE(64));
+            }
+
+            if (pGmmLibContext->GetSkuTable().FtrXe2Compression && pTexInfo->Flags.Info.Linear)
+            {
+                Size = GFX_ALIGN(Size, GMM_BYTES(256)); // for all linear resources starting Xe2, align overall size to compression block size. For subresources, 256B alignment is not needed, needed only for overall resource
+                                                        // on older platforms, all linear resources get Halign = 128B which ensures overall size to be a multiple of compression block size of 128B,
+                                                        // so this is needed only for linear resources on Xe2 where HAlign continues to be at 128B, but compression block size has doubled to 256B
             }
 
             // Buffer Sampler Padding...
@@ -787,6 +810,10 @@ GMM_STATUS GmmLib::GmmTextureCalc::FillTexPitchAndSize(GMM_TEXTURE_INFO * pTexIn
         if(pTexInfo->Flags.Gpu.NoRestriction)
         {
             SurfaceMaxSize = pPlatform->NoRestriction.MaxWidth;
+        }
+        else if(pTexInfo->Flags.Gpu.TiledResource)
+        {
+            SurfaceMaxSize = GMM_TBYTE(1);
         }
         else
         {
@@ -1224,7 +1251,6 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmTextureCalc::FillTexPlanar(GMM_TEXTURE_INFO * 
        pTexInfo->Flags.Info.TiledY)
     {
         uint32_t TileHeight = pGmmLibContext->GetPlatformInfo().TileInfo[pTexInfo->TileMode].LogicalTileHeight;
-        uint32_t TileWidth  = pGmmLibContext->GetPlatformInfo().TileInfo[pTexInfo->TileMode].LogicalTileWidth;
 
         Height = GFX_ALIGN(YHeight, TileHeight) + GFX_ALIGN(VHeight, TileHeight);
     }
@@ -1246,7 +1272,7 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmTextureCalc::FillTexPlanar(GMM_TEXTURE_INFO * 
     {
         if(false == RedescribeTexturePlanes(pTexInfo, &WidthBytesPhysical))
         {
-            __GMM_ASSERT(FALSE);
+            __GMM_ASSERT(false);
         }
     }
 

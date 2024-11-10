@@ -126,7 +126,7 @@ GMM_STATUS GmmLib::GmmGen12CachePolicy::InitCachePolicy()
 
     __GMM_ASSERTPTR(pCachePolicy, GMM_ERROR);
 
-#define DEFINE_CACHE_ELEMENT(usage, llc, ellc, l3, wt, age, aom, lecc_scc, l3_scc, scf, sso, cos, hdcl1, l3evict) DEFINE_CP_ELEMENT(usage, llc, ellc, l3, wt, age, aom, lecc_scc, l3_scc, scf, sso, cos, hdcl1, l3evict, 0, 0, 0, 0)
+#define DEFINE_CACHE_ELEMENT(usage, llc, ellc, l3, wt, age, aom, lecc_scc, l3_scc, scf, sso, cos, hdcl1, l3evict) DEFINE_CP_ELEMENT(usage, llc, ellc, l3, wt, age, aom, lecc_scc, l3_scc, scf, sso, cos, hdcl1, l3evict, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
 
 #include "GmmGen12CachePolicy.h"
 
@@ -424,7 +424,7 @@ uint32_t GmmLib::GmmGen12CachePolicy::BestMatchingPATIdx(GMM_CACHE_POLICY_ELEMEN
         WantedMemoryType = GMM_GFX_UC_WITH_FENCE;
     }
 
-    for(i = 1; i < GMM_NUM_PAT_ENTRIES; i++)
+    for(i = 1; i < NumPATRegisters; i++)
     {
         GMM_PRIVATE_PAT PAT1 = GetPrivatePATEntry(PATIdx);
         GMM_PRIVATE_PAT PAT2 = GetPrivatePATEntry(i);
@@ -504,7 +504,7 @@ GMM_STATUS GmmLib::GmmGen12CachePolicy::SetupPAT()
     }
 
     // Set values for GmmGlobalInfo PrivatePATTable
-    for(i = 0; i < GMM_NUM_PAT_ENTRIES; i++)
+    for(i = 0; i < NumPATRegisters; i++)
     {
         GMM_PRIVATE_PAT PAT = {0};
 

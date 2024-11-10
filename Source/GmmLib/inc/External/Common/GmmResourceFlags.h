@@ -123,7 +123,7 @@ typedef struct GMM_RESOURCE_FLAG_REC
         uint32_t Shared                    : 1;
         uint32_t SoftwareProtected         : 1; // Resource is driver protected against CPU R/W access
         uint32_t SVM                       : 1; // Shared Virtual Memory (i.e. GfxAddr = CpuAddr) Can only be set for ExistingSysMem allocations.
-        uint32_t TiledW                    : 1; // Tiling preference for the allocation. (second lowest priority) Y>X>W>L. Special use case.
+	uint32_t TiledW                    : 1; // Tiling preference for the allocation. (second lowest priority) Y>X>W>L. Special use case.
         uint32_t TiledX                    : 1; // Tiling preference for the allocation. (second highest priority) Y>X>W>L. Common use case.
         uint32_t TiledY                    : 1; // Tiling preference for the allocation. (highest priority) Y>X>W>L. Common use case. Displayable GEn9+
         uint32_t TiledYf                   : 1; // Tiling modifier for the allocation. Affects Linear and Y preferences. Gen9+
@@ -132,8 +132,12 @@ typedef struct GMM_RESOURCE_FLAG_REC
         uint32_t XAdapter                  : 1; // For WinBlue: to support Hybrid graphics
         uint32_t __PreallocatedResInfo     : 1; // Internal GMM flag--Clients don't set.
         uint32_t __PreWddm2SVM             : 1; // Internal GMM flag--Clients don't set.
-        uint32_t Tile4                     : 1; // XE-HP 4KB tile
-        uint32_t Tile64                    : 1; // XE-HP 64KB tile
+        uint32_t Tile4                     : 1; // 4KB tile
+        uint32_t Tile64                    : 1; // 64KB tile
+        uint32_t NotCompressed           : 1; // UMD to set this for a resource, this will be a request to GMM which need not be honoured always
+        uint32_t __MapCompressible       : 1; // Internal GMM flag which marks a resource as compressed during map, used for tracking
+        uint32_t __MapUnCompressible     : 1; // Internal GMM flag which marks a resource as not compressed during map, used for tracking
+		
     } Info;
 
     // Wa: Any Surface specific Work Around will go in here

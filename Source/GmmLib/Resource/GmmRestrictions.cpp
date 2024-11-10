@@ -76,7 +76,10 @@ void GmmLib::GmmResourceInfoCommon::GetRestrictions(__GMM_BUFFER_TYPE &Restricti
 
     GMM_TEXTURE_CALC *pTextureCalc = NULL;
     pTextureCalc                   = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
-    pTextureCalc->GetResRestrictions(&Surf, Restrictions);
+    if (pTextureCalc)
+    {
+        pTextureCalc->GetResRestrictions(&Surf, Restrictions);
+    }
 
     GMM_DPF_EXIT;
 }
@@ -553,10 +556,6 @@ void GmmLib::GmmTextureCalc::GetResRestrictions(GMM_TEXTURE_INFO * pTexinfo,
             Restrictions.PitchAlignment = GFX_ALIGN(Restrictions.PitchAlignment, GMM_KBYTE(64));
         }
 
-        if(GFX_GET_CURRENT_RENDERCORE(pPlatform->Platform) >= IGFX_GEN9_CORE)
-        {
-            pGmmLibContext->GetPlatformInfo().SurfaceMaxSize = GMM_TBYTE(1);
-        }
     }
 
     // SKL TileY Display needs 1MB alignment.
@@ -569,16 +568,16 @@ void GmmLib::GmmTextureCalc::GetResRestrictions(GMM_TEXTURE_INFO * pTexinfo,
     }
 
     if(pTexinfo->Flags.Info.RenderCompressed ||
-       pTexinfo->Flags.Info.MediaCompressed)
+        pTexinfo->Flags.Info.MediaCompressed || (pGmmLibContext->GetSkuTable().FtrXe2Compression && !pTexinfo->Flags.Info.NotCompressed))
     {
-      if(pGmmLibContext->GetSkuTable().FtrFlatPhysCCS)
+        if(pGmmLibContext->GetSkuTable().FtrFlatPhysCCS)
         {
-            Restrictions.Alignment = GFX_ALIGN(Restrictions.Alignment, GMM_KBYTE(64));
+            Restrictions.Alignment = pGmmLibContext->GetSkuTable().FtrXe2Compression ? GFX_ALIGN(Restrictions.Alignment, GMM_BYTES(256)) : GFX_ALIGN(Restrictions.Alignment, GMM_BYTES(128));
         }
         else // only for platforms having auxtable
         {
-	    Restrictions.Alignment = GFX_ALIGN(Restrictions.Alignment, (!WA16K(pGmmLibContext) ? GMM_KBYTE(64) : GMM_KBYTE(16)));
-	}
+            Restrictions.Alignment = GFX_ALIGN(Restrictions.Alignment, (WA16K(pGmmLibContext) ? GMM_KBYTE(16) : WA64K(pGmmLibContext) ? GMM_KBYTE(64) : GMM_MBYTE(1)));
+	    }
     }
 
     GMM_DPF_EXIT;

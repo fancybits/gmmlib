@@ -157,6 +157,7 @@ GMM_STATUS GmmLib::GmmGen12TextureCalc::FillTexCCS(GMM_TEXTURE_INFO *pSurf,
     else if(pAuxTexInfo->Flags.Gpu.__NonMsaaLinearCCS)
     {
         GMM_TEXTURE_INFO         Surf      = *pSurf;
+        uint32_t                 Depth;	
         const GMM_PLATFORM_INFO *pPlatform = GMM_OVERRIDE_PLATFORM_INFO(pSurf, pGmmLibContext);
         pAuxTexInfo->Flags.Info.TiledW     = 0;
         pAuxTexInfo->Flags.Info.TiledYf    = 0;
@@ -166,18 +167,20 @@ GMM_STATUS GmmLib::GmmGen12TextureCalc::FillTexCCS(GMM_TEXTURE_INFO *pSurf,
         GMM_SET_4KB_TILE(pAuxTexInfo->Flags, 0, pGmmLibContext);
 
         pAuxTexInfo->ArraySize    = Surf.ArraySize;
-        pAuxTexInfo->Alignment    = {0};
+        pAuxTexInfo->Alignment    = {0};	
         pAuxTexInfo->BitsPerPixel = 8;
+        Depth                     = (Surf.Depth > 0) ? Surf.Depth : 1; // Depth = 0 needs to be handled gracefully
         uint32_t ExpandedArraySize =
         GFX_MAX(Surf.ArraySize, 1) *
         ((Surf.Type == RESOURCE_CUBE) ? 6 : 1) *        // Cubemaps simply 6-element, 2D arrays.
-        ((Surf.Type == RESOURCE_3D) ? Surf.Depth : 1) * // 3D's simply 2D arrays for sizing.
+        ((Surf.Type == RESOURCE_3D) ? Depth : 1) * // 3D's simply 2D arrays for sizing.
         ((Surf.Flags.Gpu.Depth || Surf.Flags.Gpu.SeparateStencil ||
           GMM_IS_64KB_TILE(Surf.Flags) || Surf.Flags.Info.TiledYf) ?
          1 :
          Surf.MSAA.NumSamples) *                                                                                         // MSAA (non-Depth/Stencil) RT samples stored as array planes.
-        ((GMM_IS_64KB_TILE(Surf.Flags) && !pGmmLibContext->GetSkuTable().FtrTileY && (Surf.MSAA.NumSamples == 16)) ? 4 : // MSAA x8/x16 stored as pseudo array planes each with 4x samples
-         (GMM_IS_64KB_TILE(Surf.Flags) && !pGmmLibContext->GetSkuTable().FtrTileY && (Surf.MSAA.NumSamples == 8)) ? 2 : 1);
+        ((GMM_IS_64KB_TILE(Surf.Flags) && !pGmmLibContext->GetSkuTable().FtrTileY && !pGmmLibContext->GetSkuTable().FtrXe2PlusTiling && (Surf.MSAA.NumSamples == 16)) ? 4 : // MSAA x8/x16 stored as pseudo array planes each with 4x samples
+         (GMM_IS_64KB_TILE(Surf.Flags) && !pGmmLibContext->GetSkuTable().FtrTileY && !pGmmLibContext->GetSkuTable().FtrXe2PlusTiling && (Surf.MSAA.NumSamples == 8)) ? 2 :
+                                                                                                                                                                       1);
 
         if(GMM_IS_64KB_TILE(Surf.Flags) || Surf.Flags.Info.TiledYf)
         {
@@ -239,14 +242,14 @@ GMM_STATUS GmmLib::GmmGen12TextureCalc::FillTexCCS(GMM_TEXTURE_INFO *pSurf,
             {
                 uint64_t sliceSize = ((GFX_ALIGN(Surf.Pitch * Surf.Alignment.QPitch, GMM_KBYTE(16)) >> 8));
                 qPitch             = GFX_ULONG_CAST(sliceSize); //HW doesn't use QPitch for Aux except MCS, how'd AMFS get sw-filled non-zero QPitch?
-
                
+
                 if(Surf.MSAA.NumSamples && !pGmmLibContext->GetSkuTable().FtrTileY)
                 {
                     //MSAA Qpitch is sample-distance, multiply NumSamples in a tile
-                    qPitch *= GFX_MIN(Surf.MSAA.NumSamples, 4);
+                    qPitch *= (pGmmLibContext->GetSkuTable().FtrXe2PlusTiling ? Surf.MSAA.NumSamples : GFX_MIN(Surf.MSAA.NumSamples, 4));
                 }
-	    }
+            }
             else
             {
                 qPitch = GFX_ULONG_CAST(pAuxTexInfo->Size);
@@ -269,12 +272,12 @@ GMM_STATUS GmmLib::GmmGen12TextureCalc::FillTexCCS(GMM_TEXTURE_INFO *pSurf,
         //Clear compression request in CCS
         pAuxTexInfo->Flags.Info.RenderCompressed = 0;
         pAuxTexInfo->Flags.Info.MediaCompressed  = 0;
+        pAuxTexInfo->Flags.Info.NotCompressed    = 1;
         pAuxTexInfo->Flags.Info.RedecribedPlanes = 0;
         SetTileMode(pAuxTexInfo);
 
         return GMM_SUCCESS;
     }
-
     return GMM_SUCCESS;
 }
 
@@ -328,9 +331,11 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmGen12TextureCalc::FillTex2D(GMM_TEXTURE_INFO *
       (GMM_IS_64KB_TILE(pTexInfo->Flags) || pTexInfo->Flags.Info.TiledYf)) ? // MSAA Ys/Yf samples are ALSO stored as array planes, calculate size for single sample and expand it later.
      1 :
      pTexInfo->MSAA.NumSamples) *                                                                                              // MSAA (non-Depth/Stencil) RT samples stored as array planes.
-    ((GMM_IS_64KB_TILE(pTexInfo->Flags) && !pGmmLibContext->GetSkuTable().FtrTileY && (pTexInfo->MSAA.NumSamples == 16)) ? 4 : // MSAA x8/x16 stored as pseudo array planes each with 4x samples
-     (GMM_IS_64KB_TILE(pTexInfo->Flags) && !pGmmLibContext->GetSkuTable().FtrTileY && (pTexInfo->MSAA.NumSamples == 8)) ? 2 : 1);
-
+    ((pTexInfo->Flags.Gpu.Depth || pTexInfo->Flags.Gpu.SeparateStencil) ? // Depth/Stencil MSAA surface is expanded through Width and Depth
+     1 :
+     ((GMM_IS_64KB_TILE(pTexInfo->Flags) && !pGmmLibContext->GetSkuTable().FtrTileY && !pGmmLibContext->GetSkuTable().FtrXe2PlusTiling && (pTexInfo->MSAA.NumSamples == 16)) ? 4 : // MSAA x8/x16 stored as pseudo array planes each with 4x samples
+      (GMM_IS_64KB_TILE(pTexInfo->Flags) && !pGmmLibContext->GetSkuTable().FtrTileY && !pGmmLibContext->GetSkuTable().FtrXe2PlusTiling && (pTexInfo->MSAA.NumSamples == 8)) ? 2 :
+                                                                                                                                                                              1));
     if(GMM_IS_64KB_TILE(pTexInfo->Flags) || pTexInfo->Flags.Info.TiledYf)
     {
         ExpandedArraySize = GFX_CEIL_DIV(ExpandedArraySize, pPlatform->TileInfo[pTexInfo->TileMode].LogicalTileDepth);
@@ -496,7 +501,6 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmGen12TextureCalc::FillTex2D(GMM_TEXTURE_INFO *
     {
         Fill2DTexOffsetAddress(pTexInfo);
     }
-
     GMM_DPF_EXIT;
 
     return (Status);
@@ -880,11 +884,16 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmGen12TextureCalc::FillTexPlanar(GMM_TEXTURE_IN
 
         pTexInfo->OffsetInfo.Plane.IsTileAlignedPlanes = true;
 
-        if(pTexInfo->Flags.Gpu.CCS && !pGmmLibContext->GetSkuTable().FtrFlatPhysCCS)
+        if(pTexInfo->Flags.Gpu.CCS && !pGmmLibContext->GetSkuTable().FtrFlatPhysCCS) // alignment adjustment needed only for aux tables
         {
-            //U/V must be aligned to AuxT granularity, 4x pitchalign enforces 16K-align,
-            //add extra padding for 64K AuxT
-            TileHeight *= (!GMM_IS_64KB_TILE(pTexInfo->Flags) && !WA16K(pGmmLibContext)) ? 4 : 1;
+            if(GMM_IS_64KB_TILE(pTexInfo->Flags))
+            {
+                TileHeight *= (!WA64K(pGmmLibContext) && !WA16K(pGmmLibContext)) ? 16 : 1; // For 64Kb Tile mode: Multiply TileHeight by 16 for 1 MB alignment
+            }
+            else
+            {
+                TileHeight *= (WA16K(pGmmLibContext) ? 1 : WA64K(pGmmLibContext) ? 4 : 64); // For 4k Tile:  Multiply TileHeight by 4 and Pitch by 4 for 64kb alignment, multiply TileHeight by 64 and Pitch by 4 for 1 MB alignment
+            }
         }
 
         if(pTexInfo->Format == GMM_FORMAT_IMC2 || // IMC2, IMC4 needs even tile columns
@@ -951,7 +960,7 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmGen12TextureCalc::FillTexPlanar(GMM_TEXTURE_IN
     {
         if(false == RedescribeTexturePlanes(pTexInfo, &WidthBytesPhysical))
         {
-            __GMM_ASSERT(FALSE);
+            __GMM_ASSERT(false);
         }
     }
     
@@ -1141,6 +1150,55 @@ uint64_t GMM_STDCALL GmmLib::GmmGen12TextureCalc::ScaleFCRectWidth(GMM_TEXTURE_I
     }
 
     return ScaledWidth;
+}
+
+
+uint64_t GMM_STDCALL GmmLib::GmmGen12TextureCalc::Get2DFCSurfaceWidthFor3DSurface(GMM_TEXTURE_INFO *pTexInfo,
+                                                                                  uint64_t          Width)
+{
+    uint64_t Width2D = Width;
+    if (pTexInfo->Flags.Gpu.CCS)
+    {
+        CCS_UNIT *FCRectAlign = static_cast<PlatformInfoGen12 *>(pGmmLibContext->GetPlatformInfoObj())->GetFCRectAlign();
+        uint8_t   index       = FCMaxModes;
+        if ((index = FCMode(pTexInfo->TileMode, pTexInfo->BitsPerPixel)) < FCMaxModes)
+        {
+            Width2D = GFX_ALIGN(Width2D, FCRectAlign[index].Align.Width);
+            Width2D *= FCRectAlign[index].Downscale.Width;
+        }
+        else
+        {
+            
+            __GMM_ASSERT(0);
+        }
+    }
+    return Width2D;
+}
+uint64_t GMM_STDCALL GmmLib::GmmGen12TextureCalc::Get2DFCSurfaceHeightFor3DSurface(GMM_TEXTURE_INFO *pTexInfo,
+                                                                                   uint32_t          Height,
+                                                                                   uint32_t          Depth)
+{
+    uint64_t Height2D = Height;
+    uint32_t Depth3D  = Depth;
+
+    if (pTexInfo->Flags.Gpu.CCS && (Depth > 1))
+    {
+        CCS_UNIT *FCRectAlign = static_cast<PlatformInfoGen12 *>(pGmmLibContext->GetPlatformInfoObj())->GetFCRectAlign();
+        uint8_t   index       = FCMaxModes;
+        if ((index = FCMode(pTexInfo->TileMode, pTexInfo->BitsPerPixel)) < FCMaxModes)
+        {
+            Height2D = GFX_ALIGN(Height2D, FCRectAlign[index].Align.Height);
+            Height2D *= FCRectAlign[index].Downscale.Height;
+            Depth3D = GFX_ALIGN(Depth3D, FCRectAlign[index].Align.Depth) / FCRectAlign[index].Align.Depth;
+            Height2D *= Depth3D;
+        }
+        else
+        {
+            
+            __GMM_ASSERT(0);
+        }
+    }
+    return Height2D;
 }
 
 /////////////////////////////////////////////////////////////////////////////////////

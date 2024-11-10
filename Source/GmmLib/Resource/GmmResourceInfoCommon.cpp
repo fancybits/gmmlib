@@ -54,15 +54,15 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::Is64KBPageSuitable()
 
     if(GetGmmLibContext()->GetSkuTable().FtrLocalMemory)
      {
-        Ignore64KBPadding |= (Surf.Flags.Info.NonLocalOnly || (Surf.Flags.Info.Shared && !Surf.Flags.Info.NotLockable));
-        Ignore64KBPadding |= (GetGmmLibContext()->GetSkuTable().FtrLocalMemoryAllows4KB && Surf.Flags.Info.NoOptimizationPadding);
-	Ignore64KBPadding |= ((GetGmmLibContext()->GetSkuTable().FtrLocalMemoryAllows4KB) && (((Size * (100 + (GMM_GFX_SIZE_T)GetGmmLibContext()->GetAllowedPaddingFor64KbPagesPercentage())) / 100) < GFX_ALIGN(Size, GMM_KBYTE(64)))); 
+        Ignore64KBPadding |= (Surf.Flags.Info.Shared && !Surf.Flags.Info.NotLockable);
+        Ignore64KBPadding |= ((GetGmmLibContext()->GetSkuTable().FtrLocalMemoryAllows4KB) && Surf.Flags.Info.NoOptimizationPadding);
+        Ignore64KBPadding |= ((GetGmmLibContext()->GetSkuTable().FtrLocalMemoryAllows4KB || Surf.Flags.Info.NonLocalOnly) && (((Size * (100 + (GMM_GFX_SIZE_T)GetGmmLibContext()->GetAllowedPaddingFor64KbPagesPercentage())) / 100) < GFX_ALIGN(Size, GMM_KBYTE(64))));
     }
     else
     {
         // The final padded size cannot be larger then a set percentage of the original size
         if((Surf.Flags.Info.NoOptimizationPadding && !GFX_IS_ALIGNED(Size, GMM_KBYTE(64))) /*Surface is not 64kb aligned*/ ||
-           (!Surf.Flags.Info.NoOptimizationPadding && (((Size * (100 + GetGmmLibContext()->GetAllowedPaddingFor64KbPagesPercentage())) / 100) < GFX_ALIGN(Size, GMM_KBYTE(64)))) /*10% padding TBC */)
+           (!Surf.Flags.Info.NoOptimizationPadding && (((Size * (100 + (GMM_GFX_SIZE_T)GetGmmLibContext()->GetAllowedPaddingFor64KbPagesPercentage())) / 100) < GFX_ALIGN(Size, GMM_KBYTE(64)))) /*10% padding TBC */)
         {
             Ignore64KBPadding |= true;
         }
@@ -128,7 +128,7 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::CreateCustomRes(Context &G
 
     GET_GMM_CLIENT_TYPE(pClientContext, ClientType);
     pGmmUmdLibContext = reinterpret_cast<uint64_t>(&GmmLibContext);
-
+    __GMM_ASSERTPTR(pGmmUmdLibContext, GMM_ERROR);
 
     if((CreateParams.Format > GMM_FORMAT_INVALID) &&
        (CreateParams.Format < GMM_RESOURCE_FORMATS))
@@ -168,16 +168,7 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::CreateCustomRes(Context &G
 
     if(GmmIsPlanar(Surf.Format))
     {
-        if(GMM_IS_TILED(pPlatform->TileInfo[Surf.TileMode]))
-        {
-            Surf.OffsetInfo.Plane.IsTileAlignedPlanes = true;
-        }
-        for(i = 1; i <= CreateParams.NoOfPlanes; i++)
-        {
-            Surf.OffsetInfo.Plane.X[i] = CreateParams.PlaneOffset.X[i];
-            Surf.OffsetInfo.Plane.Y[i] = CreateParams.PlaneOffset.Y[i];
-        }
-        Surf.OffsetInfo.Plane.NoOfPlanes  = CreateParams.NoOfPlanes;
+        pTextureCalc->SetPlanarOffsetInfo(&Surf, CreateParams);
 
         if (Surf.ArraySize > 1)
         {
@@ -302,16 +293,7 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::CreateCustomRes_2(Context 
 
     if(GmmIsPlanar(Surf.Format))
     {
-        if(GMM_IS_TILED(pPlatform->TileInfo[Surf.TileMode]))
-        {
-            Surf.OffsetInfo.Plane.IsTileAlignedPlanes = true;
-        }
-        for(i = 1; i <= CreateParams.NoOfPlanes; i++)
-        {
-            Surf.OffsetInfo.Plane.X[i] = CreateParams.PlaneOffset.X[i];
-            Surf.OffsetInfo.Plane.Y[i] = CreateParams.PlaneOffset.Y[i];
-        }
-        Surf.OffsetInfo.Plane.NoOfPlanes = CreateParams.NoOfPlanes;
+        pTextureCalc->SetPlanarOffsetInfo_2(&Surf, CreateParams);
 
         if(Surf.ArraySize > 1)
         {
@@ -465,6 +447,13 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::Create(Context &GmmLibCont
     pPlatform    = GMM_OVERRIDE_PLATFORM_INFO(&Surf, GetGmmLibContext());
     pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
 
+    if (!pTextureCalc)
+    {
+        Status = GMM_ERROR;
+        GMM_ASSERTDPF(0, "Texture Calculation pointer is NULL.");
+        goto ERROR_CASE;
+    }
+
 #if defined(__GMM_KMD__) || !defined(_WIN32)
     if(!CreateParams.Flags.Info.ExistingSysMem)
 #else
@@ -511,21 +500,47 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::Create(Context &GmmLibCont
                 if(GetGmmLibContext()->GetSkuTable().FtrFlatPhysCCS && AuxSurf.Type == RESOURCE_INVALID)
                 {
                     //ie only AuxType is CCS, doesn't exist with FlatCCS, enable it for CC
-                    AuxSurf.Type = Surf.Type;
+                    if (!GetGmmLibContext()->GetSkuTable().FtrXe2Compression || (GetGmmLibContext()->GetSkuTable().FtrXe2Compression && (Surf.MSAA.NumSamples > 1)))
+                    {
+                        AuxSurf.Type = Surf.Type;
+                    }
                 }
-                if(!Surf.Flags.Gpu.TiledResource)
+                if (!Surf.Flags.Gpu.TiledResource)
                 {
-                    AuxSurf.CCSize = PAGE_SIZE; // 128bit Float Value + 32bit RT Native Value + Padding.
-                    AuxSurf.Size += PAGE_SIZE;
+                    if (!GetGmmLibContext()->GetSkuTable().FtrXe2Compression)
+                    {
+                        AuxSurf.CCSize = PAGE_SIZE; // 128bit Float Value + 32bit RT Native Value + Padding.
+                        AuxSurf.Size += PAGE_SIZE;
+                    }
+                    else
+                    {
+
+                        if (Surf.MSAA.NumSamples > 1)
+                        {
+                            AuxSurf.UnpaddedSize += PAGE_SIZE;
+                            AuxSurf.Size += PAGE_SIZE;              // Clear Color stored only for MSAA surfaces
+                        }
+                    }
                 }
                 else
                 {
-                    AuxSurf.CCSize = GMM_KBYTE(64); // 128bit Float Value + 32bit RT Native Value + Padding.
-                    AuxSurf.Size += GMM_KBYTE(64);
+                    if (!GetGmmLibContext()->GetSkuTable().FtrXe2Compression)
+                    {
+                        AuxSurf.CCSize = GMM_KBYTE(64); // 128bit Float Value + 32bit RT Native Value + Padding.
+                        AuxSurf.Size += GMM_KBYTE(64);
+                    }
+                    else
+                    {
+                        if (Surf.MSAA.NumSamples > 1)
+                        {
+                            AuxSurf.UnpaddedSize += GMM_KBYTE(64);
+                            AuxSurf.Size += GMM_KBYTE(64);              // Clear Color stored only for MSAA surfaces, stored as part of MCS
+                        }
+                    }
                 }
             }
-	    
-	    if(Surf.Flags.Gpu.ProceduralTexture)
+				    
+  	    if(Surf.Flags.Gpu.ProceduralTexture)
             {
                 //Do not require main surface access either in GPUVA/physical space.
                 Surf.Size = 0;
@@ -538,7 +553,7 @@ GMM_STATUS GMM_STDCALL GmmLib::GmmResourceInfoCommon::Create(Context &GmmLibCont
             // ensure the entire surface can be described with a constant pitch (for GGTT aliasing, clean FENCE'ing and
             // AcquireSwizzlingRange, even though the aux isn't intentionally part of such fencing).
             if(Surf.Flags.Gpu.FlipChain &&
-               !__GMM_IS_ALIGN(TotalSize, Alignment))
+               (!__GMM_IS_ALIGN(TotalSize, Alignment)))
             {
                 AuxSurf.Size += (GFX_ALIGN_NP2(TotalSize, Alignment) - TotalSize);
             }
@@ -669,9 +684,9 @@ ERROR_CASE:
 
 void GmmLib::GmmResourceInfoCommon::UpdateUnAlignedParams()
 {
-    uint32_t YHeight = 0, VHeight = 0;
-    uint32_t Height = 0, UmdUHeight = 0, UmdVHeight = 0;
-    uint32_t WidthBytesPhysical = GFX_ULONG_CAST(Surf.BaseWidth) * Surf.BitsPerPixel >> 3;
+    uint32_t          YHeight = 0, VHeight = 0, Height = 0;
+    uint32_t          WidthBytesPhysical = GFX_ULONG_CAST(Surf.BaseWidth) * Surf.BitsPerPixel >> 3;
+    GMM_TEXTURE_CALC *pTextureCalc       = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
 
     __GMM_ASSERTPTR(((Surf.TileMode < GMM_TILE_MODES) && (Surf.TileMode >= TILE_NONE)), VOIDRETURN);
     GMM_DPF_ENTER;
@@ -864,22 +879,8 @@ void GmmLib::GmmResourceInfoCommon::UpdateUnAlignedParams()
         }
     }
 
-    Surf.OffsetInfo.Plane.UnAligned.Height[GMM_PLANE_Y] = YHeight;
-    if(Surf.OffsetInfo.Plane.NoOfPlanes == 2)
-    {
-        Surf.OffsetInfo.Plane.UnAligned.Height[GMM_PLANE_U] = VHeight;
-        UmdUHeight                                          = (GMM_GLOBAL_GFX_SIZE_T)((Surf.Size / Surf.Pitch) - Surf.OffsetInfo.Plane.Y[GMM_PLANE_U]);
-    }
-    else if(Surf.OffsetInfo.Plane.NoOfPlanes == 3)
-    {
-        Surf.OffsetInfo.Plane.UnAligned.Height[GMM_PLANE_U] =
-        Surf.OffsetInfo.Plane.UnAligned.Height[GMM_PLANE_V] = VHeight;
-        UmdUHeight                                          = (GMM_GLOBAL_GFX_SIZE_T)(Surf.OffsetInfo.Plane.Y[GMM_PLANE_V] - Surf.OffsetInfo.Plane.Y[GMM_PLANE_U]);
-        UmdVHeight                                          = (GMM_GLOBAL_GFX_SIZE_T)(((Surf.Size / Surf.Pitch) - Surf.OffsetInfo.Plane.Y[GMM_PLANE_U]) / 2);
-        __GMM_ASSERTPTR((UmdUHeight == UmdVHeight), VOIDRETURN);
-    }
+    pTextureCalc->SetPlaneUnAlignedTexOffsetInfo(&Surf, YHeight, VHeight);
 
-    __GMM_ASSERTPTR(((Surf.OffsetInfo.Plane.Y[GMM_PLANE_U] == YHeight) && (UmdUHeight == VHeight)), VOIDRETURN);
 }
 /////////////////////////////////////////////////////////////////////////////////////
 /// Returns downscaled width for fast clear of given subresource
@@ -901,15 +902,36 @@ uint64_t GmmLib::GmmResourceInfoCommon::GetFastClearWidth(uint32_t MipLevel)
     }
     else if(numSamples == 2 || numSamples == 4)
     {
-        width = GFX_ALIGN(mipWidth, 8) / 8;
+        if (GetGmmLibContext()->GetSkuTable().FtrXe2Compression)
+        {
+            width = GFX_ALIGN(mipWidth, 64) / 64;
+        }
+        else
+        {
+            width = GFX_ALIGN(mipWidth, 8) / 8;
+        }
     }
     else if(numSamples == 8)
     {
-        width = GFX_ALIGN(mipWidth, 2) / 2;
+        if (GetGmmLibContext()->GetSkuTable().FtrXe2Compression)
+        {
+            width = GFX_ALIGN(mipWidth, 16) / 16;
+        }
+        else
+        {
+            width = GFX_ALIGN(mipWidth, 2) / 2;
+        }
     }
     else // numSamples == 16
     {
-        width = mipWidth;
+        if (GetGmmLibContext()->GetSkuTable().FtrXe2Compression)
+        {
+            width = GFX_ALIGN(mipWidth, 8) / 8;
+        }
+        else
+        {
+            width = mipWidth;
+        }
     }
 
     return width;
@@ -936,9 +958,46 @@ uint32_t GmmLib::GmmResourceInfoCommon::GetFastClearHeight(uint32_t MipLevel)
     }
     else
     {
-        height = GFX_ALIGN(mipHeight, 2) / 2;
+        if (GetGmmLibContext()->GetSkuTable().FtrXe2Compression)
+        {
+            height = GFX_ALIGN(mipHeight, 4) / 4;
+        }
+        else
+        {
+            height = GFX_ALIGN(mipHeight, 2) / 2;
+        }
     }
 
+    return height;
+}
+
+
+/////////////////////////////////////////////////////////////////////////////////////
+/// Returns 2D Surface width to be used for fast clear for a given 3D surface
+/// @param[in]  uint32_t : MipLevel
+/// @return     height
+/////////////////////////////////////////////////////////////////////////////////////
+uint64_t GmmLib::GmmResourceInfoCommon::Get2DFastClearSurfaceWidthFor3DSurface(uint32_t MipLevel)
+{
+    uint64_t width    = 0;
+    uint64_t mipWidth = GetMipWidth(MipLevel);
+
+    GMM_TEXTURE_CALC *pTextureCalc;
+    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
+    width        = pTextureCalc->Get2DFCSurfaceWidthFor3DSurface(&Surf, mipWidth);
+    return width;
+}
+
+
+uint64_t GmmLib::GmmResourceInfoCommon::Get2DFastClearSurfaceHeightFor3DSurface(uint32_t MipLevel)
+{
+    uint64_t          height    = 0;
+    uint32_t          mipHeight = GetMipHeight(MipLevel);
+    uint32_t          mipDepth  = GetMipDepth(MipLevel);
+    GMM_TEXTURE_CALC *pTextureCalc;
+
+    pTextureCalc = GMM_OVERRIDE_TEXTURE_CALC(&Surf, GetGmmLibContext());
+    height       = pTextureCalc->Get2DFCSurfaceHeightFor3DSurface(&Surf, mipHeight, mipDepth);
     return height;
 }
 
@@ -1342,55 +1401,13 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::CpuBlt(GMM_RES_COPY_BLT *pBlt
     pTexInfo = &(Surf);
 
     // YUV Planar surface
-    if(pTexInfo->OffsetInfo.Plane.IsTileAlignedPlanes && GmmIsPlanar(Surf.Format))
+    if(pTextureCalc->IsTileAlignedPlanes(pTexInfo) && GmmIsPlanar(Surf.Format))
     {
-        uint32_t PlaneId     = GMM_NO_PLANE;
-        uint32_t TotalHeight = 0;
-
-        if(pTexInfo->OffsetInfo.Plane.NoOfPlanes == 2)
-        {
-            TotalHeight = GFX_ULONG_CAST(pTexInfo->OffsetInfo.Plane.UnAligned.Height[GMM_PLANE_Y] +
-                                         pTexInfo->OffsetInfo.Plane.UnAligned.Height[GMM_PLANE_U]);
-        }
-        else if(pTexInfo->OffsetInfo.Plane.NoOfPlanes == 3)
-        {
-            TotalHeight = GFX_ULONG_CAST(pTexInfo->OffsetInfo.Plane.UnAligned.Height[GMM_PLANE_Y] +
-                                         pTexInfo->OffsetInfo.Plane.UnAligned.Height[GMM_PLANE_U] +
-                                         pTexInfo->OffsetInfo.Plane.UnAligned.Height[GMM_PLANE_V]);
-        }
-        else
-        {
-            TotalHeight = GFX_ULONG_CAST(pTexInfo->OffsetInfo.Plane.UnAligned.Height[GMM_PLANE_Y]); //YV12 exception
-        }
-
-        // Determine if BLT rectange is for monolithic surface or contained in specific Y/UV plane
-        if(((pBlt->Gpu.OffsetY + pBlt->Blt.Height <= Surf.OffsetInfo.Plane.Y[GMM_PLANE_U]) || pTexInfo->OffsetInfo.Plane.NoOfPlanes == 1) &&
-           (pBlt->Gpu.OffsetX + pBlt->Blt.Width <= Surf.BaseWidth))
-        {
-            PlaneId = GMM_PLANE_Y;
-        }
-        else if(pBlt->Gpu.OffsetY >= Surf.OffsetInfo.Plane.Y[GMM_PLANE_U] &&
-                (pBlt->Gpu.OffsetY + pBlt->Blt.Height <= (Surf.OffsetInfo.Plane.Y[GMM_PLANE_U] + pTexInfo->OffsetInfo.Plane.UnAligned.Height[GMM_PLANE_U])) &&
-                (pBlt->Gpu.OffsetX + pBlt->Blt.Width <= Surf.BaseWidth))
-        {
-            PlaneId = GMM_PLANE_U;
-        }
-        else if(pBlt->Gpu.OffsetY >= Surf.OffsetInfo.Plane.Y[GMM_PLANE_V] &&
-                (pBlt->Gpu.OffsetY + pBlt->Blt.Height <= (Surf.OffsetInfo.Plane.Y[GMM_PLANE_V] + pTexInfo->OffsetInfo.Plane.UnAligned.Height[GMM_PLANE_U])) &&
-                (pBlt->Gpu.OffsetX + pBlt->Blt.Width <= Surf.BaseWidth))
-        {
-            PlaneId = GMM_PLANE_V;
-        }
-
-        // For smaller surface, BLT rect may fall in Y Plane due to tile alignment but user may have requested monolithic BLT
-        if(pBlt->Gpu.OffsetX == 0 &&
-           pBlt->Gpu.OffsetY == 0 &&
-           pBlt->Blt.Height >= TotalHeight)
-        {
-            PlaneId = GMM_MAX_PLANE;
-        }
-
-        if(PlaneId == GMM_MAX_PLANE)
+        uint32_t PlaneId = GMM_NO_PLANE;
+	
+	pTextureCalc->GetPlaneIdForCpuBlt(pTexInfo, pBlt, &PlaneId);
+        
+	if(PlaneId == GMM_MAX_PLANE)
         {
             // TODO BLT rect should not overlap between planes.
             {
@@ -1399,34 +1416,9 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::CpuBlt(GMM_RES_COPY_BLT *pBlt
             }
 
             // BLT monolithic surface per plane and remove padding due to tiling.
-            for(PlaneId = GMM_PLANE_Y; PlaneId <= pTexInfo->OffsetInfo.Plane.NoOfPlanes; PlaneId++)
+            for(PlaneId = GMM_PLANE_Y; PlaneId <= pTextureCalc->GetNumberOfPlanes(pTexInfo); PlaneId++)
             {
-                if(PlaneId == GMM_PLANE_Y)
-                {
-                    pBlt->Gpu.OffsetX = GFX_ULONG_CAST(Surf.OffsetInfo.Plane.X[GMM_PLANE_Y]);
-                    pBlt->Gpu.OffsetY = GFX_ULONG_CAST(Surf.OffsetInfo.Plane.Y[GMM_PLANE_Y]);
-                    pBlt->Blt.Height  = GFX_ULONG_CAST(Surf.OffsetInfo.Plane.UnAligned.Height[GMM_PLANE_Y]);
-                }
-                else if(PlaneId == GMM_PLANE_U)
-                {
-                    pBlt->Gpu.OffsetX = GFX_ULONG_CAST(Surf.OffsetInfo.Plane.X[GMM_PLANE_U]);
-                    pBlt->Gpu.OffsetY = GFX_ULONG_CAST(Surf.OffsetInfo.Plane.Y[GMM_PLANE_U]);
-
-                    pBlt->Sys.pData  = (char *)pBlt->Sys.pData + uint32_t(pBlt->Blt.Height * pBlt->Sys.RowPitch);
-                    pBlt->Blt.Height = GFX_ULONG_CAST(Surf.OffsetInfo.Plane.UnAligned.Height[GMM_PLANE_U]);
-                    if(Surf.Flags.Info.RedecribedPlanes)
-                    {
-                        __GMM_ASSERT(0);
-                    }
-                }
-                else
-                {
-                    pBlt->Gpu.OffsetX = GFX_ULONG_CAST(Surf.OffsetInfo.Plane.X[GMM_PLANE_V]);
-                    pBlt->Gpu.OffsetY = GFX_ULONG_CAST(Surf.OffsetInfo.Plane.Y[GMM_PLANE_V]);
-                    pBlt->Blt.Height  = GFX_ULONG_CAST(Surf.OffsetInfo.Plane.UnAligned.Height[GMM_PLANE_U]);
-                    pBlt->Sys.pData   = (char *)pBlt->Sys.pData + uint32_t(pBlt->Blt.Height * pBlt->Sys.RowPitch);
-                }
-
+                pTextureCalc->GetBltInfoPerPlane(pTexInfo, pBlt, PlaneId);
                 CpuBlt(pBlt);
             }
         }
@@ -1754,21 +1746,53 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::CpuBlt(GMM_RES_COPY_BLT *pBlt
                     switch(pTexInfo->MSAA.NumSamples)           \
                     {                                           \
                         case 0:                                 \
-                            SWITCH_BPP(Layout, Tile,  , xD);    \
+                            SWITCH_BPP(Layout, TILE_64, , xD);    \
                             break;                              \
                         case 1:                                 \
-                            SWITCH_BPP(Layout, Tile,  , xD);    \
+                            SWITCH_BPP(Layout, TILE_64, , xD);    \
                             break;                              \
                         case 2:                                 \
-                            SWITCH_BPP(Layout, Tile, MSAA2_, xD);  \
+                            if(GetGmmLibContext()->GetSkuTable().FtrXe2PlusTiling)\
+                            { \
+                                SWITCH_BPP(Layout, TILE_64_V2, MSAA2_, xD); \
+                            }\
+                            else\
+                            { \
+                                SWITCH_BPP(Layout, TILE_64, MSAA2_, xD); \
+                            } \
                             break;                              \
                         case 4:                                 \
+                            if(GetGmmLibContext()->GetSkuTable().FtrXe2PlusTiling)\
+                            { \
+                                SWITCH_BPP(Layout, TILE_64_V2, MSAA4_, xD); \
+                            }\
+                            else\
+                            { \
+                                SWITCH_BPP(Layout, TILE_64, MSAA_, xD); \
+                            } \
+                            break; \
                         case 8:                                 \
+                            if(GetGmmLibContext()->GetSkuTable().FtrXe2PlusTiling)\
+                            { \
+                                SWITCH_BPP(Layout, TILE_64_V2, MSAA8_, xD); \
+                            }\
+                            else\
+                            { \
+                                SWITCH_BPP(Layout, TILE_64, MSAA_, xD); \
+                            } \
+                            break; \
                         case 16:                                \
-                            SWITCH_BPP(Layout, Tile, MSAA_, xD);  \
-                            break;                              \
-                    }\
-                }
+                            if(GetGmmLibContext()->GetSkuTable().FtrXe2PlusTiling)\
+                            { \
+                                SWITCH_BPP(Layout, TILE_64_V2, MSAA16_, xD); \
+                            }\
+                            else\
+                            { \
+                                SWITCH_BPP(Layout, TILE_64, MSAA_, xD); \
+                            } \
+                            break; \
+                    }                                           \
+                } \
 
                 #define SWITCH_MSAA(Layout, Tile, xD)           \
                 {\
@@ -1810,7 +1834,14 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::CpuBlt(GMM_RES_COPY_BLT *pBlt
                         }
                         else
                         {
-                            SWITCH_BPP(INTEL, TILE_64, , 3D_);
+                            if (GetGmmLibContext()->GetSkuTable().FtrXe2PlusTiling)
+                            {
+                                SWITCH_BPP(INTEL, TILE_64_V2, , 3D_);
+                            }
+                            else
+                            {
+                                SWITCH_BPP(INTEL, TILE_64, , 3D_);
+                            }
                         }
                     }
                 }
@@ -1868,7 +1899,8 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetMappingSpanDesc(GMM_GET_MA
     GMM_TEXTURE_INFO *       pTexInfo;
     GMM_TEXTURE_CALC *       pTextureCalc;
     GMM_TEXTURE_INFO         RedescribedPlaneInfo;
-
+    bool Aux = false;
+    
     __GMM_ASSERT(Surf.Flags.Info.StdSwizzle);
 
     pPlatform    = GMM_OVERRIDE_PLATFORM_INFO(&Surf, GetGmmLibContext());
@@ -1877,8 +1909,107 @@ uint8_t GMM_STDCALL GmmLib::GmmResourceInfoCommon::GetMappingSpanDesc(GMM_GET_MA
     __GMM_ASSERT(pTextureCalc != NULL);
     pTexInfo = &Surf;
 
-    if(pMapping->Type == GMM_MAPPING_GEN9_YS_TO_STDSWIZZLE)
+    if((pMapping->Type == GMM_MAPPING_YUVPLANAR_AUX || pMapping->Type == GMM_MAPPING_YUVPLANAR) && GmmIsPlanar(Surf.Format))    
     {
+        uint32_t            Plane;
+        GMM_REQ_OFFSET_INFO ReqInfo = {0}, NextSpanReqInfo = {0};
+        GMM_GFX_SIZE_T      SpanPhysicalOffset, SpanVirtualOffset;
+
+        if(pMapping->Type == GMM_MAPPING_YUVPLANAR_AUX)
+        {
+            // Unpack GMM_MAPPING_YUVPLANAR and Aux from caller function.
+            // Applicalble only for Aux mapping for Y/UV Plane
+            // GMM_MAPPING_YUVPLANAR_AUX is unpacked as (GMM_MAPPING_YUVPLANAR , Aux)
+            Aux = true;
+        }
+
+	if(Aux)
+        {
+            memset(pMapping, 0, sizeof(*pMapping));
+            pMapping->Type                  = GMM_MAPPING_YUVPLANAR;
+            WasFinalSpan                    = 1;
+            SpanPhysicalOffset              = GetSizeMainSurfacePhysical();
+            SpanVirtualOffset               = GetSizeMainSurface();
+            NextSpanReqInfo.Lock.Offset64   = SpanPhysicalOffset + GetSizeAuxSurface(GMM_AUX_SURF);
+            NextSpanReqInfo.Render.Offset64 = GetSizeSurface();
+        }
+        else
+        {
+            if(pMapping->Scratch.Plane == GMM_NO_PLANE)
+            {
+                uint32_t ArrayIndex = pMapping->Scratch.Slice;
+                memset(pMapping, 0, sizeof(*pMapping));
+                pMapping->Type = GMM_MAPPING_YUVPLANAR;
+		pMapping->Scratch.Plane      = GMM_PLANE_Y;
+                pMapping->Scratch.Slice = ArrayIndex;
+
+                SpanPhysicalOffset = SpanVirtualOffset = 0;
+                if(GmmLib::Utility::GmmGetNumPlanes(Surf.Format) == GMM_PLANE_V)
+                {
+                    pMapping->Scratch.LastPlane = GMM_PLANE_V;
+                }
+                else
+                {
+                    pMapping->Scratch.LastPlane = GMM_PLANE_U;
+                }
+
+                Plane = pMapping->Scratch.Plane;
+            }
+            else
+            {
+                // If we've crossed into a new plane then need to reset
+                // the current mapping info and adjust the mapping
+                // params accordingly
+
+                Plane                   = pMapping->Scratch.Plane + 1;
+                GMM_YUV_PLANE LastPlane = pMapping->Scratch.LastPlane;
+                SpanPhysicalOffset      = pMapping->__NextSpan.PhysicalOffset;
+                SpanVirtualOffset       = pMapping->__NextSpan.VirtualOffset;
+                uint32_t ArrayIndex     = pMapping->Scratch.Slice;
+                memset(pMapping, 0, sizeof(*pMapping));
+
+                pMapping->Type               = GMM_MAPPING_YUVPLANAR;
+                pMapping->Scratch.Plane      = GMM_YUV_PLANE(Plane);
+                pMapping->Scratch.LastPlane  = LastPlane;
+                pMapping->Scratch.Slice     = ArrayIndex;
+            }
+            {
+                if(pMapping->Scratch.Plane == GMM_PLANE_Y)
+                {
+                    ReqInfo.ReqRender = ReqInfo.ReqLock = 1;
+                    ReqInfo.Plane                       = GMM_YUV_PLANE(Plane);
+                    ReqInfo.ArrayIndex                  = pMapping->Scratch.Slice;
+                    this->GetOffset(ReqInfo);
+                    SpanPhysicalOffset = ReqInfo.Lock.Offset64;
+                    SpanVirtualOffset  = ReqInfo.Render.Offset64;
+                }
+                if(GMM_YUV_PLANE(Plane) < pMapping->Scratch.LastPlane)
+                {
+                    NextSpanReqInfo.ReqRender = NextSpanReqInfo.ReqLock = 1;
+                    NextSpanReqInfo.Plane                               = GMM_YUV_PLANE(Plane + 1);
+                    NextSpanReqInfo.ArrayIndex                          = pMapping->Scratch.Slice;
+                    this->GetOffset(NextSpanReqInfo);
+                }
+                else // last plane of that array
+                {
+                    NextSpanReqInfo.Lock.Offset64   = (GetSizeMainSurfacePhysical() / GFX_MAX(Surf.ArraySize, 1)) * (pMapping->Scratch.Slice + 1);
+                    NextSpanReqInfo.Render.Offset64 = (GetSizeMainSurface() / GFX_MAX(Surf.ArraySize, 1)) * (pMapping->Scratch.Slice + 1);
+                    WasFinalSpan                    = 1;
+                }
+            }
+        }
+        // Plane offsets
+        pMapping->Span.PhysicalOffset       = SpanPhysicalOffset;
+        pMapping->Span.VirtualOffset        = SpanVirtualOffset;
+        pMapping->__NextSpan.PhysicalOffset = NextSpanReqInfo.Lock.Offset64;
+        pMapping->__NextSpan.VirtualOffset  = NextSpanReqInfo.Render.Offset64;
+        pMapping->Span.Size                 = pMapping->__NextSpan.PhysicalOffset - pMapping->Span.PhysicalOffset;
+
+    }
+    else if(pMapping->Type == GMM_MAPPING_GEN9_YS_TO_STDSWIZZLE)
+    {
+        __GMM_ASSERT(Surf.Flags.Info.StdSwizzle);
+    
         const uint32_t TileSize = GMM_KBYTE(64);
 
         __GMM_ASSERT(Surf.Flags.Info.TiledYs);

@@ -70,6 +70,7 @@ typedef struct _SKU_FEATURE_TABLE
         unsigned int   FtrCCSNode : 1; // To indicate if CCS Node support is present.
         unsigned int   FtrTileY     : 1;  // Identifies Legacy tiles TileY/Yf/Ys on the platform
         unsigned int   FtrCCSMultiInstance : 1; // To indicate if driver supports MultiContext mode on RCS and more than 1 CCS.
+	unsigned int   FtrL3TransientDataFlush : 1;  // Transient data flush from L3 cache	
     };
 
 
@@ -86,7 +87,7 @@ typedef struct _SKU_FEATURE_TABLE
         unsigned int   FtrUserModeTranslationTable      : 1;  // User mode managed Translation Table support for Tiled Resources.
         unsigned int   FtrNullPages                     : 1;  // Support for PTE-based Null pages for Sparse/Tiled Resources).
         unsigned int   FtrEDram                         : 1;  // embedded DRAM enable
-        unsigned int   FtrLLCBypass                     : 1;  // Partial tunneling of UC memory traffic via CCF (LLC Bypass)
+	unsigned int   FtrLLCBypass                     : 1;  // Partial tunneling of UC memory traffic via CCF (LLC Bypass)
         unsigned int   FtrCrystalwell                   : 1;  // Crystalwell Sku
         unsigned int   FtrCentralCachePolicy            : 1;  // Centralized Cache Policy
         unsigned int   FtrWddm2GpuMmu                   : 1;  // WDDMv2 GpuMmu Model (Set in platform SKU files, but disabled by GMM as appropriate for given system.)
@@ -107,7 +108,14 @@ typedef struct _SKU_FEATURE_TABLE
 	unsigned int   FtrDisplayPageTables             : 1;  // Display Page Tables: 2-Level Page walk for Displayable Frame buffers in GGTT.
         unsigned int   Ftr57bGPUAddressing              : 1;  // 57b GPUVA support eg: PVC
 	unsigned int   FtrUnified3DMediaCompressionFormats : 1; // DG2 has unified Render/media compression(versus TGLLP/XeHP_SDV 's multiple instances) and requires changes to RC format h/w encodings.
-
+        unsigned int   FtrForceTile4                    : 1;  // Flag to force Tile4 usage as default in Tile64 supported platforms.
+        unsigned int   FtrTile64Optimization            : 1;
+        unsigned int   FtrDiscrete                      : 1;  // Discrete-gfx
+        unsigned int   FtrXe2Compression                : 1;  // Xe2 Stateless Compression
+	unsigned int   FtrXe2PlusTiling                 : 1;  // Tile64 MSAA Layout
+        unsigned int   FtrL4Cache                       : 1;  // L4 cache support
+        unsigned int   FtrPml5Support                   : 1;  // xe2 page tables		
+		
     };
 
 
@@ -526,6 +534,42 @@ typedef struct _WA_TABLE
         "[DG2][Silicon][Perf]DG2 VESFC performance when Compression feature is enabled.",
         WA_BUG_TYPE_PERF,
         WA_BUG_PERF_IMPACT_UNKNOWN, WA_COMPONENT_GMM)
+
+        WA_DECLARE(
+        Wa_22016140776,
+        "[PVC] operation unexpectedly results in NAN",
+        WA_BUG_TYPE_UNKNOWN,
+        WA_BUG_PERF_IMPACT_UNKNOWN, WA_COMPONENT_UNKNOWN)
+
+        WA_DECLARE(
+        Wa_14018443005,
+        "[Xe2] - Incorrect handling of compression when changing cached PA usage from compression OFF and another client does partial sector compression ON on W with UC",
+        WA_BUG_TYPE_UNKNOWN,
+        WA_BUG_PERF_IMPACT_UNKNOWN, WA_COMPONENT_GMM)
+
+        WA_DECLARE(
+        Wa_14018976079,
+        "[LNL] CPU-GPU False sharing broken for 1-way coherent pages",
+        WA_BUG_TYPE_UNKNOWN,
+        WA_BUG_PERF_IMPACT_UNKNOWN, WA_COMPONENT_GMM)
+
+        WA_DECLARE(
+        Wa_14018984349,
+        "[LNL] CPU-GPU False sharing broken for non-coherent pages",
+        WA_BUG_TYPE_UNKNOWN,
+        WA_BUG_PERF_IMPACT_UNKNOWN, WA_COMPONENT_GMM)
+		
+	WA_DECLARE(
+        Wa_14020040029,
+        "Misalignment on Depth buffer for Zplanes",
+        WA_BUG_TYPE_UNKNOWN,
+        WA_BUG_PERF_IMPACT_UNKNOWN, WA_COMPONENT_GMM)
+
+        WA_DECLARE(
+        Wa_EmuMufasaSupportOnBmg,
+        "WA for supporting failure seen in BMG with Mufasa",
+        WA_BUG_TYPE_FUNCTIONAL,
+        WA_BUG_PERF_IMPACT_UNKNOWN, WA_COMPONENT_UNKNOWN)	
 
 } WA_TABLE, *PWA_TABLE;
 

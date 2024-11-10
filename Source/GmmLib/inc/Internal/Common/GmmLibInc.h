@@ -39,6 +39,8 @@ OTHER DEALINGS IN THE SOFTWARE.
 #include "External/Common/CachePolicy/GmmCachePolicyGen10.h"
 #include "External/Common/CachePolicy/GmmCachePolicyGen11.h"
 #include "External/Common/CachePolicy/GmmCachePolicyGen12.h"
+#include "External/Common/CachePolicy/GmmCachePolicyXe_LPG.h"
+#include "External/Common/CachePolicy/GmmCachePolicyXe2_LPG.h"
 #include "External/Common/CachePolicy/GmmCachePolicyGen12dGPU.h"
 #include "External/Common/GmmResourceInfoExt.h"
 #include "../Platform/GmmPlatforms.h"
@@ -56,12 +58,13 @@ OTHER DEALINGS IN THE SOFTWARE.
 #include "Texture/GmmGen10TextureCalc.h"
 #include "Texture/GmmGen11TextureCalc.h"
 #include "Texture/GmmGen12TextureCalc.h"
+#include "Texture/GmmXe_LPGTextureCalc.h"
 #include "External/Common/GmmResourceInfo.h"
 #include "External/Common/GmmInfoExt.h"
 #include "External/Common/GmmInfo.h"
 #include "../Utility/GmmUtility.h"
 #include "External/Common/GmmPageTableMgr.h"
-
+#include "Internal/Common/GmmCommonInt.h"
 #include "External/Common/GmmDebug.h"                   // Unified Definitions of GMM_ASSERT and GMM_DEBUG Macros
 
 #ifndef DXGKDDI_INTERFACE_VERSION_WDDM1_3

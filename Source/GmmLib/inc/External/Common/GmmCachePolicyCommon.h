@@ -50,6 +50,7 @@ namespace GmmLib
         protected:
             Context * pGmmLibContext;
             uint32_t  NumPATRegisters;
+            uint32_t NumMOCSRegisters;
 
         public:
             GMM_CACHE_POLICY_ELEMENT *pCachePolicy;
@@ -58,15 +59,12 @@ namespace GmmLib
             GmmCachePolicyCommon(GMM_CACHE_POLICY_ELEMENT *pCachePolicy, Context *pGmmLibContext);
 
             /* Function prototypes */
-            #if _WIN32
-            void OverrideCachePolicy();
-            #endif
             GMM_GFX_MEMORY_TYPE GetWantedMemoryType(GMM_CACHE_POLICY_ELEMENT CachePolicy);
 
-            #define DEFINE_CP_ELEMENT(Usage, llc, ellc, l3, wt, age, aom, lecc_scc, l3_scc, scf, sso, cos, hdcl1, l3evict, segov, glbgo, uclookup, l1cc)               \
-            do {                                                                                                                                           \
-                    pCachePolicy[Usage].LLC         = (llc);                                                                                               \
-                    pCachePolicy[Usage].ELLC        = (ellc);                                                                                              \
+            #define DEFINE_CP_ELEMENT(Usage, llc, ellc, l3, wt, age, aom, lecc_scc, l3_scc, scf, sso, cos, hdcl1, l3evict, segov, glbgo, uclookup, l1cc, l2cc, l4cc, coherency, l3cc, l3clos, igPAT)\
+            do {                                                                                                                                                                                    \
+                    pCachePolicy[Usage].LLC         = (llc);                                                                                                                                        \
+                    pCachePolicy[Usage].ELLC        = (ellc);                                                                                                                                       \
                     pCachePolicy[Usage].L3          = (l3);                                                                                                \
                     pCachePolicy[Usage].WT          = (wt);                                                                                                \
                     pCachePolicy[Usage].AGE         = (age);                                                                                               \
@@ -83,7 +81,13 @@ namespace GmmLib
                     pCachePolicy[Usage].UcLookup    = (uclookup);                                                                                          \
                     pCachePolicy[Usage].L1CC        = (l1cc);                                                                                              \
                     pCachePolicy[Usage].Initialized = 1;                                                                                                   \
-            } while(0)
+		    pCachePolicy[Usage].L2CC        = (l2cc);                                                                                              \
+		    pCachePolicy[Usage].L4CC        = (l4cc);                                                                                              \
+		    pCachePolicy[Usage].Coherency   = (coherency);                                                                                         \
+                    pCachePolicy[Usage].L3CC        = (l3cc);                                                                                              \
+                    pCachePolicy[Usage].L3CLOS      = (l3clos);                                                                                            \
+                    pCachePolicy[Usage].IgnorePAT   = (igPAT);                                                                                             \
+    } while (0)
 
             MEMORY_OBJECT_CONTROL_STATE GMM_STDCALL CachePolicyGetOriginalMemoryObject(GMM_RESOURCE_INFO *pResInfo);
             MEMORY_OBJECT_CONTROL_STATE GMM_STDCALL CachePolicyGetMemoryObject(GMM_RESOURCE_INFO *pResInfo, GMM_RESOURCE_USAGE_TYPE Usage);
@@ -100,6 +104,8 @@ namespace GmmLib
             {
             }
             virtual uint32_t GMM_STDCALL CachePolicyGetPATIndex(GMM_RESOURCE_INFO *pResInfo, GMM_RESOURCE_USAGE_TYPE Usage, bool *pCompressionEnable, bool IsCpuCacheable);
+            uint32_t GMM_STDCALL CachePolicyGetNumPATRegisters();
+            virtual uint32_t GMM_STDCALL GetSurfaceStateL1CachePolicy(GMM_RESOURCE_USAGE_TYPE Usage);
     };
 }
 #endif // #ifdef __cplusplus
